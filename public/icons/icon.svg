@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Background circle -->
+  <circle cx="256" cy="256" r="256" fill="#16a34a"/>
+  <!-- Stem -->
+  <rect x="244" y="280" width="24" height="120" rx="12" fill="#bbf7d0"/>
+  <!-- Main leaf -->
+  <ellipse cx="256" cy="220" rx="80" ry="110" fill="#4ade80" transform="rotate(-10 256 220)"/>
+  <!-- Left leaf -->
+  <ellipse cx="192" cy="260" rx="55" ry="80" fill="#22c55e" transform="rotate(-40 192 260)"/>
+  <!-- Right leaf -->
+  <ellipse cx="320" cy="260" rx="55" ry="80" fill="#22c55e" transform="rotate(40 320 260)"/>
+  <!-- Highlight on main leaf -->
+  <ellipse cx="240" cy="195" rx="25" ry="45" fill="#86efac" opacity="0.5" transform="rotate(-10 240 195)"/>
+</svg>

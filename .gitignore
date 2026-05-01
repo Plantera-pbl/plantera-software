@@ -44,3 +44,11 @@ yarn-error.log*
 
 # idea files
 .idea
+
+# PWA generated files
+/public/sw.js
+/public/sw.js.map
+/public/workbox-*.js
+/public/workbox-*.js.map
+/public/worker-*.js
+/public/worker-*.js.map
