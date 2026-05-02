@@ -26,3 +26,21 @@ export const posts = createTable(
   }),
   (t) => [index("name_idx").on(t.name)],
 );
+
+export const plants = createTable(
+  "plant",
+  (d) => ({
+    id: d.integer().primaryKey().generatedByDefaultAsIdentity(),
+    userId: d.varchar({ length: 256 }).notNull(),
+    name: d.varchar({ length: 256 }).notNull(),
+    species: d.varchar({ length: 256 }),
+    topic: d.varchar({ length: 512 }),
+    photoUrl: d.text(),
+    createdAt: d
+      .timestamp({ withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+    updatedAt: d.timestamp({ withTimezone: true }).$onUpdate(() => new Date()),
+  }),
+  (t) => [index("plant_user_idx").on(t.userId)],
+);

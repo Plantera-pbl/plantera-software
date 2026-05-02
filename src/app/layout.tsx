@@ -38,7 +38,38 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <ClerkProvider>
+    <ClerkProvider
+      appearance={{
+        variables: {
+          colorPrimary: "#16a34a",
+          colorBackground: "#ffffff",
+          colorText: "#111827",
+          colorTextSecondary: "#6b7280",
+          colorInputBackground: "#ffffff",
+          colorInputText: "#111827",
+          borderRadius: "0.75rem",
+          fontFamily:
+            "var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif",
+        },
+        elements: {
+          card: "shadow-lg shadow-green-100/50",
+          headerTitle: "text-green-900",
+          headerSubtitle: "text-gray-500",
+          socialButtonsBlockButton:
+            "border border-gray-200 hover:bg-gray-50 transition",
+          dividerLine: "bg-gray-100",
+          dividerText: "text-gray-400 text-xs",
+          formFieldLabel: "text-sm font-medium text-gray-700",
+          formFieldInput:
+            "rounded-lg border-gray-200 focus:border-green-400 focus:ring-green-400",
+          formButtonPrimary:
+            "bg-green-600 hover:bg-green-700 transition rounded-lg text-sm font-medium",
+          footerActionLink: "text-green-600 hover:text-green-700 font-medium",
+          identityPreviewEditButton: "text-green-600",
+          badge: "bg-green-50 text-green-700",
+        },
+      }}
+    >
       <html lang="en" className={`${geist.variable}`}>
         <body>
           <TRPCReactProvider>{children}</TRPCReactProvider>
