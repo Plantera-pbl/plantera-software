@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Show, SignInButton, UserButton } from "@clerk/nextjs";
 import { HydrateClient } from "@/trpc/server";
 
 export default async function Home() {
@@ -34,9 +35,16 @@ export default async function Home() {
                 Technology
               </Link>
             </div>
-            <button className="rounded-full bg-green-600 px-6 py-2 font-semibold text-white shadow-lg shadow-green-200 transition hover:bg-green-700">
-              Get Started
-            </button>
+            <Show when="signed-out">
+              <SignInButton mode="modal">
+                <button className="rounded-full bg-green-600 px-6 py-2 font-semibold text-white shadow-lg shadow-green-200 transition hover:bg-green-700">
+                  Get Started
+                </button>
+              </SignInButton>
+            </Show>
+            <Show when="signed-in">
+              <UserButton />
+            </Show>
           </div>
         </nav>
 
