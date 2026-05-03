@@ -365,7 +365,7 @@ export function Dashboard() {
   useEffect(() => {
     if (!BROKER_URL || !selectedTopic) return;
     let cancelled = false;
-    fetchHistory(selectedTopic).then((readings) => {
+    void fetchHistory(selectedTopic).then((readings) => {
       if (cancelled || readings.length === 0) return;
       const pts = [...readings].reverse().map(toHistoryPoint);
       const latest = readings[0]!;
@@ -408,7 +408,8 @@ export function Dashboard() {
   // ── Broker: poll for live readings every 5 s ──────────────────────────────
   useEffect(() => {
     if (!BROKER_URL || !selectedTopic) return;
-    const id = setInterval(async () => {
+    const id = setInterval(() => {
+      void (async () => {
       const reading = await fetchLatest(selectedTopic);
       if (!reading) return;
       const ts = new Date(reading.timestamp);
@@ -446,6 +447,7 @@ export function Dashboard() {
           };
         }),
       );
+      })();
     }, 5_000);
     return () => clearInterval(id);
   }, [selectedId, selectedTopic]);
