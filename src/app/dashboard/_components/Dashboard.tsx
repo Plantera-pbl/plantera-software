@@ -21,10 +21,10 @@ interface PlantHistory {
 }
 
 interface SensorData {
-  light: number; // 0-4095
-  soilMoisture: number; // 0-4095
-  temperature: number; // -40-80 C
-  humidity: number; // 0-100 %
+  light: number;        // 0–100 %
+  soilMoisture: number; // 0–100 %
+  temperature: number;  // °C (-40–80)
+  humidity: number;     // 0–100 %
 }
 
 interface Plant {
@@ -69,14 +69,14 @@ function generatePlantData(seed: number): {
   const r = (s: number) => seededRandom(seed * 31 + s);
   return {
     sensors: {
-      light: Math.round(500 + r(1) * 3000),
-      soilMoisture: Math.round(800 + r(2) * 2800),
+      light: Math.round((20 + r(1) * 75) * 10) / 10,
+      soilMoisture: Math.round((20 + r(2) * 65) * 10) / 10,
       temperature: Math.round((15 + r(3) * 20) * 10) / 10,
       humidity: Math.round((40 + r(4) * 40) * 10) / 10,
     },
     history: {
-      light: generateHistory(0, 4095, seed * 11 + 1),
-      soilMoisture: generateHistory(0, 4095, seed * 11 + 2),
+      light: generateHistory(0, 100, seed * 11 + 1),
+      soilMoisture: generateHistory(0, 100, seed * 11 + 2),
       temperature: generateHistory(-40, 80, seed * 11 + 3),
       humidity: generateHistory(0, 100, seed * 11 + 4),
     },
@@ -84,6 +84,67 @@ function generatePlantData(seed: number): {
 }
 
 const INITIAL_PLANTS: Plant[] = [];
+
+// ─── Broker ───────────────────────────────────────────────────────────────────
+
+const BROKER_URL = process.env.NEXT_PUBLIC_BROKER_URL ?? "";
+
+interface BrokerReading {
+  id: number;
+  device_id: number;
+  timestamp: string;
+  payload: Record<string, unknown>;
+  light: number | null;
+  soil_moisture: number | null;
+  temp: number | null;
+  ambient_humidity: number | null;
+}
+
+async function fetchLatest(deviceId: string): Promise<BrokerReading | null> {
+  if (!BROKER_URL || !deviceId) return null;
+  try {
+    const res = await fetch(
+      `${BROKER_URL}/api/v1/devices/${deviceId}/readings/latest`,
+    );
+    if (!res.ok) return null;
+    return res.json() as Promise<BrokerReading>;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchHistory(
+  deviceId: string,
+  limit = 48,
+): Promise<BrokerReading[]> {
+  if (!BROKER_URL || !deviceId) return [];
+  try {
+    const res = await fetch(
+      `${BROKER_URL}/api/v1/devices/${deviceId}/readings?limit=${limit}`,
+    );
+    if (!res.ok) return [];
+    return res.json() as Promise<BrokerReading[]>;
+  } catch {
+    return [];
+  }
+}
+
+function toHistoryPoint(r: BrokerReading): {
+  time: string;
+  light: number;
+  soilMoisture: number;
+  temperature: number;
+  humidity: number;
+} {
+  const t = new Date(r.timestamp);
+  return {
+    time: `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`,
+    light: r.light ?? 0,
+    soilMoisture: r.soil_moisture ?? 0,
+    temperature: r.temp ?? 0,
+    humidity: r.ambient_humidity ?? 0,
+  };
+}
 
 // ─── Guidance ─────────────────────────────────────────────────────────────────
 
@@ -97,21 +158,21 @@ interface Guidance {
 function getGuidance(sensors: SensorData): Guidance[] {
   const items: Guidance[] = [];
 
-  if (sensors.soilMoisture < 600) {
+  if (sensors.soilMoisture < 15) {
     items.push({
       type: "warning",
       icon: "💧",
       title: "Water immediately",
       description: "Soil is critically dry. Water your plant now.",
     });
-  } else if (sensors.soilMoisture < 1400) {
+  } else if (sensors.soilMoisture < 35) {
     items.push({
       type: "info",
       icon: "💧",
       title: "Water soon",
       description: "Soil moisture is low. Water in the next 1-2 days.",
     });
-  } else if (sensors.soilMoisture > 3200) {
+  } else if (sensors.soilMoisture > 78) {
     items.push({
       type: "warning",
       icon: "🌊",
@@ -120,14 +181,14 @@ function getGuidance(sensors: SensorData): Guidance[] {
     });
   }
 
-  if (sensors.light < 400) {
+  if (sensors.light < 10) {
     items.push({
       type: "warning",
       icon: "☀️",
       title: "Too dark",
       description: "Move to a brighter spot or add a grow light.",
     });
-  } else if (sensors.light < 1200) {
+  } else if (sensors.light < 30) {
     items.push({
       type: "info",
       icon: "☀️",
@@ -188,22 +249,22 @@ const SENSORS = [
     label: "Light",
     icon: "☀️",
     min: 0,
-    max: 4095,
-    unit: "",
+    max: 100,
+    unit: "%",
     color: "#f59e0b",
-    format: (v: number) => `${Math.round(v)}`,
-    sub: "ADC 0–4095",
+    format: (v: number) => `${Math.round(v)}%`,
+    sub: "0–100 %",
   },
   {
     key: "soilMoisture" as const,
     label: "Soil Moisture",
     icon: "💧",
     min: 0,
-    max: 4095,
-    unit: "",
+    max: 100,
+    unit: "%",
     color: "#3b82f6",
-    format: (v: number) => `${Math.round(v)}`,
-    sub: "ADC 0–4095",
+    format: (v: number) => `${Math.round(v)}%`,
+    sub: "0–100 %",
   },
   {
     key: "temperature" as const,
@@ -298,15 +359,107 @@ export function Dashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dbPlants]);
 
-  // Simulate broker updates every 3 s
+  const selectedTopic = plants.find((p) => p.id === selectedId)?.topic ?? "";
+
+  // ── Broker: load history when selected plant changes ───────────────────────
   useEffect(() => {
+    if (!BROKER_URL || !selectedTopic) return;
+    let cancelled = false;
+    fetchHistory(selectedTopic).then((readings) => {
+      if (cancelled || readings.length === 0) return;
+      const pts = [...readings].reverse().map(toHistoryPoint);
+      const latest = readings[0]!;
+      setPlants((prev) =>
+        prev.map((p) =>
+          p.id === selectedId
+            ? {
+                ...p,
+                sensors: {
+                  light: latest.light ?? p.sensors.light,
+                  soilMoisture: latest.soil_moisture ?? p.sensors.soilMoisture,
+                  temperature: latest.temp ?? p.sensors.temperature,
+                  humidity: latest.ambient_humidity ?? p.sensors.humidity,
+                },
+                history: {
+                  light: pts.map((pt) => ({ time: pt.time, value: pt.light })),
+                  soilMoisture: pts.map((pt) => ({
+                    time: pt.time,
+                    value: pt.soilMoisture,
+                  })),
+                  temperature: pts.map((pt) => ({
+                    time: pt.time,
+                    value: pt.temperature,
+                  })),
+                  humidity: pts.map((pt) => ({
+                    time: pt.time,
+                    value: pt.humidity,
+                  })),
+                },
+              }
+            : p,
+        ),
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId, selectedTopic]);
+
+  // ── Broker: poll for live readings every 5 s ──────────────────────────────
+  useEffect(() => {
+    if (!BROKER_URL || !selectedTopic) return;
+    const id = setInterval(async () => {
+      const reading = await fetchLatest(selectedTopic);
+      if (!reading) return;
+      const ts = new Date(reading.timestamp);
+      const time = `${String(ts.getHours()).padStart(2, "0")}:${String(ts.getMinutes()).padStart(2, "0")}`;
+      setPlants((prev) =>
+        prev.map((p) => {
+          if (p.id !== selectedId) return p;
+          const newSensors = {
+            light: reading.light ?? p.sensors.light,
+            soilMoisture: reading.soil_moisture ?? p.sensors.soilMoisture,
+            temperature: reading.temp ?? p.sensors.temperature,
+            humidity: reading.ambient_humidity ?? p.sensors.humidity,
+          };
+          return {
+            ...p,
+            sensors: newSensors,
+            history: {
+              light: [
+                ...p.history.light.slice(-47),
+                { time, value: newSensors.light },
+              ],
+              soilMoisture: [
+                ...p.history.soilMoisture.slice(-47),
+                { time, value: newSensors.soilMoisture },
+              ],
+              temperature: [
+                ...p.history.temperature.slice(-47),
+                { time, value: newSensors.temperature },
+              ],
+              humidity: [
+                ...p.history.humidity.slice(-47),
+                { time, value: newSensors.humidity },
+              ],
+            },
+          };
+        }),
+      );
+    }, 5_000);
+    return () => clearInterval(id);
+  }, [selectedId, selectedTopic]);
+
+  // ── Simulate updates for plants without a broker connection ────────────────
+  useEffect(() => {
+    if (BROKER_URL) return;
     const id = setInterval(() => {
       setPlants((prev) =>
         prev.map((p) => ({
           ...p,
           sensors: {
-            light: clamp(p.sensors.light + rand(80), 0, 4095),
-            soilMoisture: clamp(p.sensors.soilMoisture + rand(30), 0, 4095),
+            light: clamp(p.sensors.light + rand(2), 0, 100),
+            soilMoisture: clamp(p.sensors.soilMoisture + rand(1), 0, 100),
             temperature: clamp(p.sensors.temperature + rand(0.5), -40, 80),
             humidity: clamp(p.sensors.humidity + rand(0.8), 0, 100),
           },
@@ -595,10 +748,10 @@ export function Dashboard() {
                   }
                 />
               </Field>
-              <Field label="Broker topic">
+              <Field label="Device ID">
                 <input
                   className="input font-mono"
-                  placeholder="plantera/my-plant"
+                  placeholder="e.g. 1"
                   value={form.topic}
                   onChange={(e) =>
                     setForm((f) => ({ ...f, topic: e.target.value }))
