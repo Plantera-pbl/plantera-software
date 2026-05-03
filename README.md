@@ -4,6 +4,16 @@ A plant monitoring web app. Each plant is paired with a physical sensor device (
 
 ---
 
+## Features
+
+- **Live sensor dashboard** — readings update every 5 seconds from the broker (or simulated when offline)
+- **Historical charts** — filterable by time window: last 1 h, 6 h, 12 h, or 24 h
+- **Plant management** — add, edit, and delete plants; each linked to a physical device via its numeric Device ID
+- **Care guidance** — contextual tips based on current sensor values
+- **Notifications** — in-app notification bell in the header plus browser push notifications when sensor thresholds are exceeded
+
+---
+
 ## Tech stack
 
 | Layer | Technology |
@@ -46,6 +56,30 @@ Each plant in the database has a **Device ID** field (`topic` column). This is t
 
 - `GET /api/v1/devices/{id}/readings` — load chart history on plant select
 - `GET /api/v1/devices/{id}/readings/latest` — poll every 5 s for live data
+
+---
+
+## Notifications
+
+Plantera checks sensor readings on every live poll (every 5 seconds) and fires alerts when values cross defined thresholds. Each alert has a **30-minute cooldown per plant** so you are not flooded with repeated messages.
+
+Alerts appear in two places:
+1. **In-app bell icon** in the top-right header — shows a red badge with the unread count; clicking it opens a dropdown panel listing all past notifications for the current session.
+2. **Browser push notification** — shown by the OS if the user has granted the `Notification` permission.
+
+### Notification types
+
+| Icon | Key | Trigger condition | Severity |
+|------|-----|-------------------|----------|
+| 💧 | `soil-critical` | Soil moisture **< 15 %** | Critical — water immediately |
+| 💧 | `soil-low` | Soil moisture **< 35 %** | Warning — water in the next 1–2 days |
+| 🌊 | `soil-high` | Soil moisture **> 78 %** | Warning — plant may be overwatered |
+| ☀️ | `light-critical` | Light level **< 10 %** | Critical — plant is in the dark |
+| ☀️ | `light-low` | Light level **< 30 %** | Info — light is low, move closer to a window |
+| 🥶 | `temp-low` | Temperature **< 10 °C** | Warning — too cold, risk of cold shock |
+| 🔥 | `temp-high` | Temperature **> 32 °C** | Warning — too hot, risk of heat stress |
+
+> **Note:** humidity alerts are shown as care guidance cards on the dashboard but do not currently trigger push/bell notifications.
 
 ---
 

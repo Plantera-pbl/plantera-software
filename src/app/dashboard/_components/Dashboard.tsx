@@ -295,12 +295,32 @@ const SENSORS = [
 
 export function Dashboard() {
   const utils = api.useUtils();
-  const { checkAndNotify } = useNotifications();
+
+  // ── Notifications (DB-backed) ──────────────────────────────────────────────
+  const { data: dbNotifications } = api.notification.list.useQuery();
+  const createNotification = api.notification.create.useMutation({
+    onSuccess: () => utils.notification.list.invalidate(),
+  });
+  const markAllReadMutation = api.notification.markAllRead.useMutation({
+    onSuccess: () => utils.notification.list.invalidate(),
+  });
+
+  const notifications = dbNotifications ?? [];
+  const unreadCount = notifications.filter((n) => !n.read).length;
+
+  const { checkAndNotify } = useNotifications({
+    onSave: (title, body) => {
+      void createNotification.mutateAsync({ title, body });
+    },
+  });
 
   // ── DB state ───────────────────────────────────────────────────────────────
   const { data: dbPlants, isLoading } = api.plant.list.useQuery();
 
   const createPlant = api.plant.create.useMutation({
+    onSuccess: () => utils.plant.list.invalidate(),
+  });
+  const updatePlant = api.plant.update.useMutation({
     onSuccess: () => utils.plant.list.invalidate(),
   });
   const deletePlant = api.plant.delete.useMutation({
@@ -311,7 +331,17 @@ export function Dashboard() {
   const [plants, setPlants] = useState<Plant[]>(INITIAL_PLANTS);
   const [selectedId, setSelectedId] = useState<string>("");
   const [showAdd, setShowAdd] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
+  const [editingId, setEditingId] = useState<string>("");
+  const [editForm, setEditForm] = useState({
+    name: "",
+    species: "",
+    topic: "",
+    photo: null as string | null,
+  });
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const notifRef = useRef<HTMLDivElement>(null);
   const [form, setForm] = useState({
     name: "",
     species: "",
@@ -319,6 +349,7 @@ export function Dashboard() {
     photo: null as string | null,
   });
   const photoInputRef = useRef<HTMLInputElement>(null);
+  const editPhotoInputRef = useRef<HTMLInputElement>(null);
   // Always holds the current selected plant's name for use inside intervals
   const selectedNameRef = useRef<string>("Your plant");
   useEffect(() => {
@@ -511,6 +542,52 @@ export function Dashboard() {
       setSelectedId(plants.find((p) => p.id !== id)?.id ?? "");
   }
 
+  function handleEditOpen(id: string) {
+    const plant = plants.find((p) => p.id === id);
+    if (!plant) return;
+    setEditingId(id);
+    setEditForm({
+      name: plant.name,
+      species: plant.species,
+      topic: plant.topic,
+      photo: plant.photo,
+    });
+    setShowEdit(true);
+  }
+
+  async function handleEditSave() {
+    if (!editForm.name.trim()) return;
+    await updatePlant.mutateAsync({
+      id: Number(editingId),
+      name: editForm.name.trim(),
+      species: editForm.species.trim() || undefined,
+      topic: editForm.topic.trim() || undefined,
+      photoUrl: editForm.photo ?? undefined,
+    });
+    setShowEdit(false);
+  }
+
+  function handleEditPhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () =>
+      setEditForm((f) => ({ ...f, photo: reader.result as string }));
+    reader.readAsDataURL(file);
+  }
+
+  // Close notification dropdown on outside click
+  useEffect(() => {
+    if (!notifOpen) return;
+    function handleClick(e: MouseEvent) {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+        setNotifOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [notifOpen]);
+
   function selectPlant(id: string) {
     setSelectedId(id);
     setSidebarOpen(false);
@@ -608,7 +685,45 @@ export function Dashboard() {
           <span className="text-xl">🌱</span>
           <span className="font-semibold text-green-800">Plantera</span>
         </Link>
-        <UserButton />
+        <div className="flex items-center gap-3">
+          {/* Notification bell */}
+          <div className="relative" ref={notifRef}>
+            <button
+              onClick={() => {
+                setNotifOpen((o) => !o);
+                if (!notifOpen) void markAllReadMutation.mutateAsync();
+              }}
+              aria-label="Notifications"
+              className="relative rounded-lg p-2 text-gray-500 transition hover:bg-gray-100"
+            >
+              <svg
+                className="h-5 w-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
+                />
+              </svg>
+              {unreadCount > 0 && (
+                <span className="absolute top-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </span>
+              )}
+            </button>
+            {notifOpen && (
+              <NotificationDropdown
+                notifications={notifications}
+                onClose={() => setNotifOpen(false)}
+              />
+            )}
+          </div>
+          <UserButton />
+        </div>
       </header>
 
       <div className="flex min-h-0 flex-1">
@@ -627,6 +742,7 @@ export function Dashboard() {
             <PlantView
               plant={selected}
               onDelete={handleDelete}
+              onEdit={handleEditOpen}
               isDeleting={deletePlant.isPending}
             />
           ) : (
@@ -793,6 +909,165 @@ export function Dashboard() {
           </div>
         </div>
       )}
+
+      {/* Edit plant dialog */}
+      {showEdit && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center"
+          onClick={(e) => e.target === e.currentTarget && setShowEdit(false)}
+        >
+          <div className="w-full rounded-t-2xl bg-white p-6 shadow-xl sm:max-w-sm sm:rounded-2xl">
+            <h2 className="mb-5 text-lg font-semibold text-gray-900">
+              Edit plant
+            </h2>
+            <div className="space-y-3">
+              {/* Photo upload */}
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">
+                  Photo (optional)
+                </label>
+                <div
+                  className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-200 py-4 transition hover:border-green-300 hover:bg-green-50"
+                  onClick={() => editPhotoInputRef.current?.click()}
+                >
+                  {editForm.photo ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={editForm.photo}
+                      alt="Preview"
+                      className="h-20 w-20 rounded-full object-cover"
+                    />
+                  ) : (
+                    <>
+                      <span className="text-2xl">📷</span>
+                      <span className="mt-1 text-xs text-gray-400">
+                        Tap to upload
+                      </span>
+                    </>
+                  )}
+                </div>
+                <input
+                  ref={editPhotoInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={handleEditPhotoChange}
+                />
+                {editForm.photo && (
+                  <button
+                    className="mt-1 text-xs text-gray-400 hover:text-gray-600"
+                    onClick={() => setEditForm((f) => ({ ...f, photo: null }))}
+                  >
+                    Remove photo
+                  </button>
+                )}
+              </div>
+
+              <Field label="Name *">
+                <input
+                  className="input"
+                  placeholder="e.g. Living Room Monstera"
+                  value={editForm.name}
+                  onChange={(e) =>
+                    setEditForm((f) => ({ ...f, name: e.target.value }))
+                  }
+                />
+              </Field>
+              <Field label="Species">
+                <input
+                  className="input"
+                  placeholder="e.g. Monstera deliciosa"
+                  value={editForm.species}
+                  onChange={(e) =>
+                    setEditForm((f) => ({ ...f, species: e.target.value }))
+                  }
+                />
+              </Field>
+              <Field label="Device ID">
+                <input
+                  className="input font-mono"
+                  placeholder="e.g. 1"
+                  value={editForm.topic}
+                  onChange={(e) =>
+                    setEditForm((f) => ({ ...f, topic: e.target.value }))
+                  }
+                />
+              </Field>
+            </div>
+            <div className="mt-5 flex gap-3">
+              <button
+                onClick={() => setShowEdit(false)}
+                className="flex-1 rounded-lg border border-gray-200 py-2.5 text-sm text-gray-600 transition hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleEditSave}
+                disabled={!editForm.name.trim() || updatePlant.isPending}
+                className="flex-1 rounded-lg bg-green-600 py-2.5 text-sm font-medium text-white transition hover:bg-green-700 disabled:opacity-40"
+              >
+                {updatePlant.isPending ? "Saving…" : "Save changes"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Notification dropdown ────────────────────────────────────────────────────
+
+function NotificationDropdown({
+  notifications,
+  onClose,
+}: {
+  notifications: { id: number; title: string; body: string; read: boolean; createdAt: Date }[];
+  onClose: () => void;
+}) {
+  function formatTime(d: Date) {
+    return new Date(d).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+
+  return (
+    <div className="absolute right-0 top-full z-50 mt-2 w-80 rounded-xl border border-gray-100 bg-white shadow-lg">
+      <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+        <span className="text-sm font-semibold text-gray-800">
+          Notifications
+        </span>
+        <button
+          onClick={onClose}
+          className="text-xs text-gray-400 hover:text-gray-600"
+        >
+          Close
+        </button>
+      </div>
+      <div className="max-h-80 overflow-y-auto">
+        {notifications.length === 0 ? (
+          <p className="px-4 py-6 text-center text-sm text-gray-400">
+            No notifications yet
+          </p>
+        ) : (
+          notifications.map((n) => (
+            <div
+              key={n.id}
+              className="border-b border-gray-50 px-4 py-3 last:border-0"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-sm font-medium text-gray-800">{n.title}</p>
+                <span className="shrink-0 text-[10px] text-gray-400">
+                  {formatTime(n.createdAt)}
+                </span>
+              </div>
+              <p className="mt-0.5 text-xs text-gray-500">{n.body}</p>
+            </div>
+          ))
+        )}
+      </div>
     </div>
   );
 }
@@ -802,14 +1077,29 @@ export function Dashboard() {
 function PlantView({
   plant,
   onDelete,
+  onEdit,
   isDeleting,
 }: {
   plant: Plant;
   onDelete: (id: string) => void;
+  onEdit: (id: string) => void;
   isDeleting: boolean;
 }) {
   const guidance = getGuidance(plant.sensors);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [timePoints, setTimePoints] = useState(Infinity);
+
+  const TIME_RANGES = [
+    { label: "1h", points: 4 },
+    { label: "6h", points: 10 },
+    { label: "12h", points: 18 },
+    { label: "24h", points: Infinity },
+  ] as const;
+
+  function filterHistory(data: { time: string; value: number }[]) {
+    if (timePoints === Infinity) return data;
+    return data.slice(-timePoints);
+  }
 
   return (
     <div className="mx-auto max-w-4xl space-y-5">
@@ -841,45 +1131,68 @@ function PlantView({
             </span>
           </div>
         </div>
-        {/* Delete */}
-        {confirmDelete ? (
-          <div className="flex shrink-0 items-center gap-2">
-            <span className="text-xs text-gray-500">Remove?</span>
-            <button
-              onClick={() => onDelete(plant.id)}
-              disabled={isDeleting}
-              className="rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-red-600 disabled:opacity-40"
-            >
-              {isDeleting ? "…" : "Yes"}
-            </button>
-            <button
-              onClick={() => setConfirmDelete(false)}
-              className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-500 transition hover:bg-gray-50"
-            >
-              No
-            </button>
-          </div>
-        ) : (
-          <button
-            onClick={() => setConfirmDelete(true)}
-            className="shrink-0 rounded-lg border border-gray-200 p-2 text-gray-400 transition hover:border-red-200 hover:text-red-400"
-            aria-label="Delete plant"
-          >
-            <svg
-              className="h-4 w-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-              />
-            </svg>
-          </button>
-        )}
+        {/* Edit + Delete */}
+        <div className="flex shrink-0 items-center gap-2">
+          {confirmDelete ? (
+            <>
+              <span className="text-xs text-gray-500">Remove?</span>
+              <button
+                onClick={() => onDelete(plant.id)}
+                disabled={isDeleting}
+                className="rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-red-600 disabled:opacity-40"
+              >
+                {isDeleting ? "…" : "Yes"}
+              </button>
+              <button
+                onClick={() => setConfirmDelete(false)}
+                className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-500 transition hover:bg-gray-50"
+              >
+                No
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => onEdit(plant.id)}
+                className="rounded-lg border border-gray-200 p-2 text-gray-400 transition hover:border-green-200 hover:text-green-500"
+                aria-label="Edit plant"
+              >
+                <svg
+                  className="h-4 w-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                  />
+                </svg>
+              </button>
+              <button
+                onClick={() => setConfirmDelete(true)}
+                className="rounded-lg border border-gray-200 p-2 text-gray-400 transition hover:border-red-200 hover:text-red-400"
+                aria-label="Delete plant"
+              >
+                <svg
+                  className="h-4 w-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                  />
+                </svg>
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Sensor cards */}
@@ -915,25 +1228,43 @@ function PlantView({
       </div>
 
       {/* Charts */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {SENSORS.map((s) => (
-          <div key={s.key} className="rounded-xl bg-white p-4 shadow-sm">
-            <div className="mb-2 flex items-center gap-2">
-              <span className="text-sm">{s.icon}</span>
-              <span className="text-sm font-medium text-gray-700">
-                {s.label}
-              </span>
-              <span className="ml-auto text-xs text-gray-400">24 h</span>
-            </div>
-            <SensorChart
-              data={plant.history[s.key]}
-              color={s.color}
-              min={s.min}
-              max={s.max}
-              unit={s.unit}
-            />
+      <div className="rounded-xl bg-white p-4 shadow-sm">
+        {/* Time range filter */}
+        <div className="mb-3 flex items-center justify-between">
+          <span className="text-sm font-medium text-gray-700">
+            Sensor history
+          </span>
+          <div className="flex gap-1">
+            {TIME_RANGES.map((r) => (
+              <button
+                key={r.label}
+                onClick={() => setTimePoints(r.points)}
+                className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${timePoints === r.points ? "bg-green-600 text-white" : "text-gray-500 hover:bg-gray-100"}`}
+              >
+                {r.label}
+              </button>
+            ))}
           </div>
-        ))}
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {SENSORS.map((s) => (
+            <div key={s.key} className="rounded-xl bg-gray-50 p-3">
+              <div className="mb-2 flex items-center gap-2">
+                <span className="text-sm">{s.icon}</span>
+                <span className="text-sm font-medium text-gray-700">
+                  {s.label}
+                </span>
+              </div>
+              <SensorChart
+                data={filterHistory(plant.history[s.key])}
+                color={s.color}
+                min={s.min}
+                max={s.max}
+                unit={s.unit}
+              />
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Guidance */}

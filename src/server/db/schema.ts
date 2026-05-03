@@ -44,3 +44,19 @@ export const plants = createTable(
   }),
   (t) => [index("plant_user_idx").on(t.userId)],
 );
+
+export const notifications = createTable(
+  "notification",
+  (d) => ({
+    id: d.integer().primaryKey().generatedByDefaultAsIdentity(),
+    userId: d.varchar({ length: 256 }).notNull(),
+    title: d.varchar({ length: 512 }).notNull(),
+    body: d.text().notNull(),
+    read: d.boolean().notNull().default(false),
+    createdAt: d
+      .timestamp({ withTimezone: true })
+      .$defaultFn(() => new Date())
+      .notNull(),
+  }),
+  (t) => [index("notif_user_idx").on(t.userId)],
+);

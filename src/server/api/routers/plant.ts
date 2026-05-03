@@ -36,6 +36,29 @@ export const plantRouter = createTRPCRouter({
       return plant;
     }),
 
+  update: protectedProcedure
+    .input(
+      z.object({
+        id: z.number(),
+        name: z.string().min(1).max(256),
+        species: z.string().max(256).optional(),
+        topic: z.string().max(512).optional(),
+        photoUrl: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      await ctx.db
+        .update(plants)
+        .set({
+          name: input.name,
+          species: input.species ?? null,
+          topic: input.topic ?? null,
+          photoUrl: input.photoUrl ?? null,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(plants.id, input.id), eq(plants.userId, ctx.userId)));
+    }),
+
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {

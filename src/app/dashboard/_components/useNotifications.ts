@@ -17,6 +17,14 @@ interface Alert {
   body: string;
 }
 
+export interface InAppNotification {
+  id: number;
+  title: string;
+  body: string;
+  read: boolean;
+  createdAt: Date;
+}
+
 function buildAlerts(plantName: string, s: SensorSnapshot): Alert[] {
   const out: Alert[] = [];
 
@@ -69,7 +77,12 @@ function buildAlerts(plantName: string, s: SensorSnapshot): Alert[] {
   return out;
 }
 
-export function useNotifications() {
+interface UseNotificationsOptions {
+  /** Called for each new alert that passes the cooldown; persists to DB */
+  onSave: (title: string, body: string) => void;
+}
+
+export function useNotifications({ onSave }: UseNotificationsOptions) {
   const cooldownRef = useRef<Map<string, number>>(new Map());
 
   useEffect(() => {
@@ -84,9 +97,6 @@ export function useNotifications() {
     plantName: string,
     sensors: SensorSnapshot,
   ) {
-    if (typeof Notification === "undefined") return;
-    if (Notification.permission !== "granted") return;
-
     const now = Date.now();
     const alerts = buildAlerts(plantName, sensors);
 
@@ -96,15 +106,25 @@ export function useNotifications() {
       if (now - last < COOLDOWN_MS) continue;
       cooldownRef.current.set(key, now);
 
-      new Notification(alert.title, {
-        body: alert.body,
-        icon: "/icons/icon-192x192.png",
-        badge: "/icons/icon-192x192.png",
-        tag: key, // collapses duplicate OS notifications
-        silent: false,
-      });
+      // Persist to DB via callback
+      onSave(alert.title, alert.body);
+
+      // Browser push notification if permitted
+      if (
+        typeof Notification !== "undefined" &&
+        Notification.permission === "granted"
+      ) {
+        new Notification(alert.title, {
+          body: alert.body,
+          icon: "/icons/icon-192x192.png",
+          badge: "/icons/icon-192x192.png",
+          tag: key,
+          silent: false,
+        });
+      }
     }
   }
 
   return { checkAndNotify };
 }
+
