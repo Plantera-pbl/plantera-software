@@ -22,10 +22,10 @@ interface PlantHistory {
 }
 
 interface SensorData {
-  light: number;        // 0–100 %
+  light: number; // 0–100 %
   soilMoisture: number; // 0–100 %
-  temperature: number;  // °C (-40–80)
-  humidity: number;     // 0–100 %
+  temperature: number; // °C (-40–80)
+  humidity: number; // 0–100 %
 }
 
 interface Plant {
@@ -418,44 +418,44 @@ export function Dashboard() {
     if (!BROKER_URL || !selectedTopic) return;
     const id = setInterval(() => {
       void (async () => {
-      const reading = await fetchLatest(selectedTopic);
-      if (!reading) return;
-      const ts = new Date(reading.timestamp);
-      const time = `${String(ts.getHours()).padStart(2, "0")}:${String(ts.getMinutes()).padStart(2, "0")}`;
-      const newSensors = {
-        light: reading.light ?? 0,
-        soilMoisture: reading.soil_moisture ?? 0,
-        temperature: reading.temp ?? 0,
-        humidity: reading.ambient_humidity ?? 0,
-      };
-      checkAndNotify(selectedId, selectedNameRef.current, newSensors);
-      setPlants((prev) =>
-        prev.map((p) => {
-          if (p.id !== selectedId) return p;
-          return {
-            ...p,
-            sensors: newSensors,
-            history: {
-              light: [
-                ...p.history.light.slice(-47),
-                { time, value: newSensors.light },
-              ],
-              soilMoisture: [
-                ...p.history.soilMoisture.slice(-47),
-                { time, value: newSensors.soilMoisture },
-              ],
-              temperature: [
-                ...p.history.temperature.slice(-47),
-                { time, value: newSensors.temperature },
-              ],
-              humidity: [
-                ...p.history.humidity.slice(-47),
-                { time, value: newSensors.humidity },
-              ],
-            },
-          };
-        }),
-      );
+        const reading = await fetchLatest(selectedTopic);
+        if (!reading) return;
+        const ts = new Date(reading.timestamp);
+        const time = `${String(ts.getHours()).padStart(2, "0")}:${String(ts.getMinutes()).padStart(2, "0")}`;
+        const newSensors = {
+          light: reading.light ?? 0,
+          soilMoisture: reading.soil_moisture ?? 0,
+          temperature: reading.temp ?? 0,
+          humidity: reading.ambient_humidity ?? 0,
+        };
+        checkAndNotify(selectedId, selectedNameRef.current, newSensors);
+        setPlants((prev) =>
+          prev.map((p) => {
+            if (p.id !== selectedId) return p;
+            return {
+              ...p,
+              sensors: newSensors,
+              history: {
+                light: [
+                  ...p.history.light.slice(-47),
+                  { time, value: newSensors.light },
+                ],
+                soilMoisture: [
+                  ...p.history.soilMoisture.slice(-47),
+                  { time, value: newSensors.soilMoisture },
+                ],
+                temperature: [
+                  ...p.history.temperature.slice(-47),
+                  { time, value: newSensors.temperature },
+                ],
+                humidity: [
+                  ...p.history.humidity.slice(-47),
+                  { time, value: newSensors.humidity },
+                ],
+              },
+            };
+          }),
+        );
       })();
     }, 5_000);
     return () => clearInterval(id);

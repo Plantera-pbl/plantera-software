@@ -5,10 +5,10 @@ import { useEffect, useRef } from "react";
 const COOLDOWN_MS = 30 * 60 * 1000; // 30 min between same alert for same plant
 
 interface SensorSnapshot {
-  light: number;        // 0–100 %
+  light: number; // 0–100 %
   soilMoisture: number; // 0–100 %
-  temperature: number;  // °C
-  humidity: number;     // 0–100 %
+  temperature: number; // °C
+  humidity: number; // 0–100 %
 }
 
 interface Alert {
