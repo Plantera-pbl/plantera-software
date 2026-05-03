@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { UserButton } from "@clerk/nextjs";
 import { SensorChart } from "./SensorChart";
+import { useNotifications } from "./useNotifications";
 import { api } from "@/trpc/react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -294,6 +295,7 @@ const SENSORS = [
 
 export function Dashboard() {
   const utils = api.useUtils();
+  const { checkAndNotify } = useNotifications();
 
   // ── DB state ───────────────────────────────────────────────────────────────
   const { data: dbPlants, isLoading } = api.plant.list.useQuery();
@@ -317,6 +319,12 @@ export function Dashboard() {
     photo: null as string | null,
   });
   const photoInputRef = useRef<HTMLInputElement>(null);
+  // Always holds the current selected plant's name for use inside intervals
+  const selectedNameRef = useRef<string>("Your plant");
+  useEffect(() => {
+    const p = plants.find((pl) => pl.id === selectedId);
+    if (p) selectedNameRef.current = p.name;
+  }, [plants, selectedId]);
 
   // Hydrate local plant list from DB whenever the DB data changes
   useEffect(() => {
@@ -414,15 +422,16 @@ export function Dashboard() {
       if (!reading) return;
       const ts = new Date(reading.timestamp);
       const time = `${String(ts.getHours()).padStart(2, "0")}:${String(ts.getMinutes()).padStart(2, "0")}`;
+      const newSensors = {
+        light: reading.light ?? 0,
+        soilMoisture: reading.soil_moisture ?? 0,
+        temperature: reading.temp ?? 0,
+        humidity: reading.ambient_humidity ?? 0,
+      };
+      checkAndNotify(selectedId, selectedNameRef.current, newSensors);
       setPlants((prev) =>
         prev.map((p) => {
           if (p.id !== selectedId) return p;
-          const newSensors = {
-            light: reading.light ?? p.sensors.light,
-            soilMoisture: reading.soil_moisture ?? p.sensors.soilMoisture,
-            temperature: reading.temp ?? p.sensors.temperature,
-            humidity: reading.ambient_humidity ?? p.sensors.humidity,
-          };
           return {
             ...p,
             sensors: newSensors,
@@ -450,6 +459,8 @@ export function Dashboard() {
       })();
     }, 5_000);
     return () => clearInterval(id);
+    // checkAndNotify is stable (ref-based), intentionally omitted
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId, selectedTopic]);
 
   // ── Simulate updates for plants without a broker connection ────────────────
