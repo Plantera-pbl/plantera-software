@@ -1218,7 +1218,7 @@ function NotificationDropdown({
   }
 
   return (
-    <div className="absolute top-full right-0 z-50 mt-2 w-80 rounded-xl border border-gray-100 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900">
+    <div className="fixed inset-x-2 top-14 z-50 rounded-xl border border-gray-100 bg-white shadow-lg md:absolute md:inset-x-auto md:top-full md:right-0 md:mt-2 md:w-80 dark:border-gray-700 dark:bg-gray-900">
       <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 dark:border-gray-700">
         <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">
           Notifications
