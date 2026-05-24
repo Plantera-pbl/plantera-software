@@ -1,10 +1,14 @@
 ﻿"use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import { UserButton } from "@clerk/nextjs";
 import { SensorChart } from "./SensorChart";
-import { useNotifications } from "./useNotifications";
+import {
+  useNotifications,
+  DEFAULT_DEVICE_CONFIG,
+  type DeviceConfig,
+} from "./useNotifications";
 import { api } from "@/trpc/react";
 import { ThemeToggle } from "@/app/_components/ThemeToggle";
 
@@ -282,7 +286,7 @@ const SENSORS = [
   {
     key: "humidity" as const,
     label: "Humidity",
-    icon: "🌫️",
+    icon: "💦",
     min: 0,
     max: 100,
     unit: "%",
@@ -309,9 +313,15 @@ export function Dashboard() {
   const notifications = dbNotifications ?? [];
   const unreadCount = notifications.filter((n) => !n.read).length;
 
-  const { checkAndNotify } = useNotifications({
-    onSave: (title, body) => {
-      void createNotification.mutateAsync({ title, body });
+  const { checkAndNotify, checkReminders } = useNotifications({
+    onSave: ({ title, body, plantId, category, severity }) => {
+      void createNotification.mutateAsync({
+        title,
+        body,
+        plantId,
+        category,
+        severity,
+      });
     },
   });
 
@@ -342,6 +352,8 @@ export function Dashboard() {
   });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showReminders, setShowReminders] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
   const [form, setForm] = useState({
     name: "",
@@ -400,6 +412,67 @@ export function Dashboard() {
   }, [dbPlants]);
 
   const selectedTopic = plants.find((p) => p.id === selectedId)?.topic ?? "";
+
+  // ── Per-plant device config + reminders ────────────────────────────────────
+  const selectedDbId = Number.parseInt(selectedId, 10);
+  const hasSelectedDbId = Number.isFinite(selectedDbId);
+  const { data: deviceConfigData } = api.config.get.useQuery(
+    { plantId: selectedDbId },
+    { enabled: hasSelectedDbId },
+  );
+  const upsertConfig = api.config.upsert.useMutation({
+    onSuccess: () => utils.config.get.invalidate(),
+  });
+  const activeConfig: DeviceConfig = useMemo(
+    () =>
+      deviceConfigData
+        ? {
+            wateringCooldownMin: deviceConfigData.wateringCooldownMin,
+            wateringOnPct: deviceConfigData.wateringOnPct,
+            wateringOffPct: deviceConfigData.wateringOffPct,
+            wateringDurationSec: deviceConfigData.wateringDurationSec,
+            fanOnPct: deviceConfigData.fanOnPct,
+            fanOffPct: deviceConfigData.fanOffPct,
+            lightOnPct: deviceConfigData.lightOnPct,
+            lightOffPct: deviceConfigData.lightOffPct,
+            quietHours:
+              (deviceConfigData.quietHours as {
+                start: string;
+                end: string;
+              }[]) ?? [],
+            timezoneOffsetMin: deviceConfigData.timezoneOffsetMin,
+            deviceOn: deviceConfigData.deviceOn,
+          }
+        : DEFAULT_DEVICE_CONFIG,
+    [deviceConfigData],
+  );
+
+  const { data: remindersData } = api.reminder.list.useQuery();
+  const createReminder = api.reminder.create.useMutation({
+    onSuccess: () => utils.reminder.list.invalidate(),
+  });
+  const markReminderDone = api.reminder.markDone.useMutation({
+    onSuccess: () => utils.reminder.list.invalidate(),
+  });
+  const deleteReminder = api.reminder.delete.useMutation({
+    onSuccess: () => utils.reminder.list.invalidate(),
+  });
+  const reminders = remindersData ?? [];
+
+  // Keep activeConfig in a ref so the 5s poll uses the freshest value
+  // without restarting the interval each render.
+  const activeConfigRef = useRef<DeviceConfig>(activeConfig);
+  useEffect(() => {
+    activeConfigRef.current = activeConfig;
+  }, [activeConfig]);
+
+  // Check reminders every 30s
+  useEffect(() => {
+    checkReminders(reminders);
+    const id = setInterval(() => checkReminders(reminders), 30_000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reminders]);
 
   // ── Broker: load history when selected plant changes ───────────────────────
   useEffect(() => {
@@ -460,7 +533,12 @@ export function Dashboard() {
           temperature: reading.temp ?? 0,
           humidity: reading.ambient_humidity ?? 0,
         };
-        checkAndNotify(selectedId, selectedNameRef.current, newSensors);
+        checkAndNotify(
+          selectedId,
+          selectedNameRef.current,
+          newSensors,
+          activeConfigRef.current,
+        );
         setPlants((prev) =>
           prev.map((p) => {
             if (p.id !== selectedId) return p;
@@ -725,6 +803,50 @@ export function Dashboard() {
               />
             )}
           </div>
+          {/* Reminders */}
+          <button
+            onClick={() => setShowReminders(true)}
+            aria-label="Reminders"
+            title="Reminders"
+            className="rounded-lg p-2 text-gray-500 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
+          >
+            <svg
+              className="h-5 w-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+          </button>
+          {/* Per-plant settings */}
+          {hasSelectedDbId && (
+            <button
+              onClick={() => setShowSettings(true)}
+              aria-label="Plant settings"
+              title="Plant device settings"
+              className="rounded-lg p-2 text-gray-500 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
+            >
+              <svg
+                className="h-5 w-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M10.325 4.317a1 1 0 011.35 0l.755.755a1 1 0 001.06.226l1.013-.338a1 1 0 011.281.628l.338 1.013a1 1 0 00.776.776l1.013.338a1 1 0 01.628 1.281l-.338 1.013a1 1 0 00.226 1.06l.755.755a1 1 0 010 1.35l-.755.755a1 1 0 00-.226 1.06l.338 1.013a1 1 0 01-.628 1.281l-1.013.338a1 1 0 00-.776.776l-.338 1.013a1 1 0 01-1.281.628l-1.013-.338a1 1 0 00-1.06.226l-.755.755a1 1 0 01-1.35 0l-.755-.755a1 1 0 00-1.06-.226l-1.013.338a1 1 0 01-1.281-.628l-.338-1.013a1 1 0 00-.776-.776l-1.013-.338a1 1 0 01-.628-1.281l.338-1.013a1 1 0 00-.226-1.06l-.755-.755a1 1 0 010-1.35l.755-.755a1 1 0 00.226-1.06l-.338-1.013a1 1 0 01.628-1.281l1.013-.338a1 1 0 00.776-.776l.338-1.013a1 1 0 011.281-.628l1.013.338a1 1 0 001.06-.226l.755-.755zM12 15a3 3 0 100-6 3 3 0 000 6z"
+                />
+              </svg>
+            </button>
+          )}
           <ThemeToggle />
           <UserButton />
         </div>
@@ -745,6 +867,7 @@ export function Dashboard() {
           ) : selected ? (
             <PlantView
               plant={selected}
+              config={activeConfig}
               onDelete={handleDelete}
               onEdit={handleEditOpen}
               isDeleting={deletePlant.isPending}
@@ -916,6 +1039,40 @@ export function Dashboard() {
         </div>
       )}
 
+      {/* Settings dialog */}
+      {showSettings && hasSelectedDbId && (
+        <SettingsDialog
+          plantId={selectedDbId}
+          plantName={selected?.name ?? "Plant"}
+          initial={activeConfig}
+          onClose={() => setShowSettings(false)}
+          onSave={async (cfg) => {
+            await upsertConfig.mutateAsync({ plantId: selectedDbId, ...cfg });
+            setShowSettings(false);
+          }}
+          isSaving={upsertConfig.isPending}
+        />
+      )}
+
+      {/* Reminders dialog */}
+      {showReminders && (
+        <RemindersDialog
+          reminders={reminders}
+          plants={plants}
+          onClose={() => setShowReminders(false)}
+          onCreate={async (input) => {
+            await createReminder.mutateAsync(input);
+          }}
+          onDone={async (id) => {
+            await markReminderDone.mutateAsync({ id });
+          }}
+          onDelete={async (id) => {
+            await deleteReminder.mutateAsync({ id });
+          }}
+          isCreating={createReminder.isPending}
+        />
+      )}
+
       {/* Edit plant dialog */}
       {showEdit && (
         <div
@@ -1034,6 +1191,8 @@ function NotificationDropdown({
     title: string;
     body: string;
     read: boolean;
+    category?: string | null;
+    severity?: string | null;
     createdAt: Date;
   }[];
   onClose: () => void;
@@ -1043,6 +1202,19 @@ function NotificationDropdown({
       hour: "2-digit",
       minute: "2-digit",
     });
+  }
+
+  function severityClass(sev: string | null | undefined) {
+    switch (sev) {
+      case "success":
+        return "border-l-green-500";
+      case "warning":
+        return "border-l-amber-500";
+      case "critical":
+        return "border-l-red-500";
+      default:
+        return "border-l-blue-500";
+    }
   }
 
   return (
@@ -1067,7 +1239,7 @@ function NotificationDropdown({
           notifications.map((n) => (
             <div
               key={n.id}
-              className="border-b border-gray-50 px-4 py-3 last:border-0 dark:border-gray-800"
+              className={`border-b border-l-4 border-gray-50 px-4 py-3 last:border-b-0 dark:border-gray-800 ${severityClass(n.severity)}`}
             >
               <div className="flex items-start justify-between gap-2">
                 <p className="text-sm font-medium text-gray-800 dark:text-gray-200">
@@ -1077,7 +1249,14 @@ function NotificationDropdown({
                   {formatTime(n.createdAt)}
                 </span>
               </div>
-              <p className="mt-0.5 text-xs text-gray-500">{n.body}</p>
+              <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                {n.body}
+              </p>
+              {n.category && (
+                <span className="mt-1 inline-block rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium tracking-wide text-gray-500 uppercase dark:bg-gray-800 dark:text-gray-400">
+                  {n.category}
+                </span>
+              )}
             </div>
           ))
         )}
@@ -1090,11 +1269,13 @@ function NotificationDropdown({
 
 function PlantView({
   plant,
+  config,
   onDelete,
   onEdit,
   isDeleting,
 }: {
   plant: Plant;
+  config: DeviceConfig;
   onDelete: (id: string) => void;
   onEdit: (id: string) => void;
   isDeleting: boolean;
@@ -1267,26 +1448,47 @@ function PlantView({
           </div>
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {SENSORS.map((s) => (
-            <div
-              key={s.key}
-              className="rounded-xl bg-gray-50 p-3 dark:bg-gray-800"
-            >
-              <div className="mb-2 flex items-center gap-2">
-                <span className="text-sm">{s.icon}</span>
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  {s.label}
-                </span>
+          {SENSORS.map((s) => {
+            // Map sensor → configured ON/OFF thresholds so the chart can
+            // draw reference lines that reflect the actual automation.
+            let onThreshold: number | undefined;
+            let offThreshold: number | undefined;
+            if (s.key === "soilMoisture") {
+              onThreshold = config.wateringOnPct;
+              offThreshold = config.wateringOffPct;
+            } else if (s.key === "humidity") {
+              onThreshold = config.fanOnPct;
+              offThreshold = config.fanOffPct;
+            } else if (s.key === "light") {
+              onThreshold = config.lightOnPct;
+              offThreshold = config.lightOffPct;
+            } else if (s.key === "temperature") {
+              onThreshold = 10; // cold alert
+              offThreshold = 32; // hot alert
+            }
+            return (
+              <div
+                key={s.key}
+                className="rounded-xl bg-gray-50 p-3 dark:bg-gray-800"
+              >
+                <div className="mb-2 flex items-center gap-2">
+                  <span className="text-sm">{s.icon}</span>
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {s.label}
+                  </span>
+                </div>
+                <SensorChart
+                  data={filterHistory(plant.history[s.key])}
+                  color={s.color}
+                  min={s.min}
+                  max={s.max}
+                  unit={s.unit}
+                  onThreshold={onThreshold}
+                  offThreshold={offThreshold}
+                />
               </div>
-              <SensorChart
-                data={filterHistory(plant.history[s.key])}
-                color={s.color}
-                min={s.min}
-                max={s.max}
-                unit={s.unit}
-              />
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -1338,4 +1540,407 @@ function rand(scale: number) {
 }
 function clamp(v: number, min: number, max: number) {
   return Math.max(min, Math.min(max, v));
+}
+
+// ─── Settings (per-plant device config) ───────────────────────────────────────
+
+function SettingsDialog({
+  plantId: _plantId,
+  plantName,
+  initial,
+  onClose,
+  onSave,
+  isSaving,
+}: {
+  plantId: number;
+  plantName: string;
+  initial: DeviceConfig;
+  onClose: () => void;
+  onSave: (cfg: DeviceConfig) => Promise<void> | void;
+  isSaving: boolean;
+}) {
+  const [cfg, setCfg] = useState<DeviceConfig>(initial);
+
+  function num(
+    key: keyof DeviceConfig,
+    label: string,
+    suffix = "",
+    min = 0,
+    max = 100,
+  ) {
+    return (
+      <Field label={`${label}${suffix ? ` (${suffix})` : ""}`}>
+        <input
+          type="number"
+          className="input"
+          min={min}
+          max={max}
+          value={cfg[key] as number}
+          onChange={(e) =>
+            setCfg((c) => ({ ...c, [key]: Number(e.target.value) }))
+          }
+        />
+      </Field>
+    );
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className="max-h-[90vh] w-full overflow-y-auto rounded-t-2xl bg-white p-6 shadow-xl sm:max-w-md sm:rounded-2xl dark:bg-gray-900">
+        <h2 className="mb-1 text-lg font-semibold text-gray-900 dark:text-gray-100">
+          Device settings
+        </h2>
+        <p className="mb-4 text-xs text-gray-500 dark:text-gray-400">
+          {plantName} — these thresholds drive both the device and the
+          notification engine.
+        </p>
+
+        <div className="mb-4 flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2 dark:bg-gray-800">
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+            Device enabled
+          </span>
+          <button
+            onClick={() => setCfg((c) => ({ ...c, deviceOn: !c.deviceOn }))}
+            className={`relative h-6 w-11 rounded-full transition ${cfg.deviceOn ? "bg-green-500" : "bg-gray-300 dark:bg-gray-600"}`}
+            aria-label="Toggle device"
+          >
+            <span
+              className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition ${cfg.deviceOn ? "translate-x-5" : ""}`}
+            />
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          <section>
+            <h3 className="mb-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
+              💧 Watering
+            </h3>
+            <div className="grid grid-cols-2 gap-3">
+              {num("wateringOnPct", "Trigger ≤", "%")}
+              {num("wateringOffPct", "Stop ≥", "%")}
+              {num("wateringDurationSec", "Burst", "s", 1, 600)}
+              {num("wateringCooldownMin", "Cooldown", "min", 0, 720)}
+            </div>
+          </section>
+
+          <section>
+            <h3 className="mb-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
+              🌀 Fan (humidity)
+            </h3>
+            <div className="grid grid-cols-2 gap-3">
+              {num("fanOnPct", "Trigger ≥", "%")}
+              {num("fanOffPct", "Stop ≤", "%")}
+            </div>
+          </section>
+
+          <section>
+            <h3 className="mb-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
+              💡 Grow light
+            </h3>
+            <div className="grid grid-cols-2 gap-3">
+              {num("lightOnPct", "Trigger ≤", "%")}
+              {num("lightOffPct", "Stop ≥", "%")}
+            </div>
+          </section>
+
+          <section>
+            <h3 className="mb-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
+              🌙 Quiet hours
+            </h3>
+            <p className="mb-2 text-xs text-gray-500 dark:text-gray-400">
+              No notifications fire during these windows. Times are in local
+              time (24h, HH:mm).
+            </p>
+            {cfg.quietHours.map((w, i) => (
+              <div key={i} className="mb-2 flex items-center gap-2">
+                <input
+                  type="time"
+                  className="input flex-1"
+                  value={w.start}
+                  onChange={(e) =>
+                    setCfg((c) => {
+                      const next = [...c.quietHours];
+                      next[i] = { ...next[i]!, start: e.target.value };
+                      return { ...c, quietHours: next };
+                    })
+                  }
+                />
+                <span className="text-xs text-gray-400">→</span>
+                <input
+                  type="time"
+                  className="input flex-1"
+                  value={w.end}
+                  onChange={(e) =>
+                    setCfg((c) => {
+                      const next = [...c.quietHours];
+                      next[i] = { ...next[i]!, end: e.target.value };
+                      return { ...c, quietHours: next };
+                    })
+                  }
+                />
+                <button
+                  onClick={() =>
+                    setCfg((c) => ({
+                      ...c,
+                      quietHours: c.quietHours.filter((_, j) => j !== i),
+                    }))
+                  }
+                  className="rounded p-1 text-gray-400 hover:text-red-500"
+                  aria-label="Remove"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+            <button
+              onClick={() =>
+                setCfg((c) => ({
+                  ...c,
+                  quietHours: [
+                    ...c.quietHours,
+                    { start: "22:00", end: "07:00" },
+                  ],
+                }))
+              }
+              className="text-xs text-green-600 hover:underline dark:text-green-400"
+            >
+              + Add quiet window
+            </button>
+          </section>
+
+          <section>
+            <h3 className="mb-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
+              🌐 Timezone offset (minutes from UTC)
+            </h3>
+            <input
+              type="number"
+              className="input"
+              min={-840}
+              max={840}
+              value={cfg.timezoneOffsetMin}
+              onChange={(e) =>
+                setCfg((c) => ({
+                  ...c,
+                  timezoneOffsetMin: Number(e.target.value),
+                }))
+              }
+            />
+            <p className="mt-1 text-xs text-gray-400">
+              e.g. 120 for UTC+2, -300 for UTC-5
+            </p>
+          </section>
+        </div>
+
+        <div className="mt-5 flex gap-3">
+          <button
+            onClick={onClose}
+            className="flex-1 rounded-lg border border-gray-200 py-2.5 text-sm text-gray-600 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => void onSave(cfg)}
+            disabled={isSaving}
+            className="flex-1 rounded-lg bg-green-600 py-2.5 text-sm font-medium text-white transition hover:bg-green-700 disabled:opacity-40"
+          >
+            {isSaving ? "Saving…" : "Save settings"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Reminders dialog ─────────────────────────────────────────────────────────
+
+function RemindersDialog({
+  reminders,
+  plants,
+  onClose,
+  onCreate,
+  onDone,
+  onDelete,
+  isCreating,
+}: {
+  reminders: {
+    id: number;
+    title: string;
+    note: string | null;
+    plantId: number | null;
+    dueAt: Date | string;
+    done: boolean;
+  }[];
+  plants: Plant[];
+  onClose: () => void;
+  onCreate: (input: {
+    title: string;
+    note?: string;
+    plantId?: number;
+    dueAt: Date;
+  }) => Promise<void>;
+  onDone: (id: number) => Promise<void>;
+  onDelete: (id: number) => Promise<void>;
+  isCreating: boolean;
+}) {
+  const [title, setTitle] = useState("");
+  const [note, setNote] = useState("");
+  const [days, setDays] = useState(30);
+  const [plantId, setPlantId] = useState<string>("");
+
+  async function add() {
+    if (!title.trim()) return;
+    const dueAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+    await onCreate({
+      title: title.trim(),
+      note: note.trim() || undefined,
+      plantId: plantId ? Number(plantId) : undefined,
+      dueAt,
+    });
+    setTitle("");
+    setNote("");
+    setDays(30);
+    setPlantId("");
+  }
+
+  function fmt(d: Date | string) {
+    return new Date(d).toLocaleString([], {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className="max-h-[90vh] w-full overflow-y-auto rounded-t-2xl bg-white p-6 shadow-xl sm:max-w-md sm:rounded-2xl dark:bg-gray-900">
+        <h2 className="mb-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
+          ⏰ Reminders
+        </h2>
+
+        <div className="mb-5 space-y-3 rounded-lg bg-gray-50 p-3 dark:bg-gray-800">
+          <Field label="Title">
+            <input
+              className="input"
+              placeholder="e.g. Add fertiliser"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
+          </Field>
+          <Field label="Note (optional)">
+            <input
+              className="input"
+              placeholder="e.g. Use diluted NPK 10-10-10"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+            />
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="In how many days">
+              <input
+                type="number"
+                className="input"
+                min={1}
+                max={365}
+                value={days}
+                onChange={(e) => setDays(Number(e.target.value))}
+              />
+            </Field>
+            <Field label="Plant (optional)">
+              <select
+                className="input"
+                value={plantId}
+                onChange={(e) => setPlantId(e.target.value)}
+              >
+                <option value="">— Any —</option>
+                {plants.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+          <button
+            onClick={() => void add()}
+            disabled={!title.trim() || isCreating}
+            className="w-full rounded-lg bg-green-600 py-2 text-sm font-medium text-white transition hover:bg-green-700 disabled:opacity-40"
+          >
+            {isCreating ? "Adding…" : "+ Add reminder"}
+          </button>
+        </div>
+
+        <div className="max-h-64 space-y-2 overflow-y-auto">
+          {reminders.length === 0 ? (
+            <p className="py-6 text-center text-sm text-gray-400">
+              No reminders yet
+            </p>
+          ) : (
+            reminders.map((r) => {
+              const overdue =
+                !r.done && new Date(r.dueAt).getTime() < Date.now();
+              return (
+                <div
+                  key={r.id}
+                  className={`rounded-lg border p-3 ${r.done ? "border-gray-100 bg-gray-50 opacity-60 dark:border-gray-700 dark:bg-gray-800" : overdue ? "border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20" : "border-gray-100 dark:border-gray-700"}`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p
+                        className={`text-sm font-medium ${r.done ? "line-through" : ""} text-gray-800 dark:text-gray-200`}
+                      >
+                        {r.title}
+                      </p>
+                      {r.note && (
+                        <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                          {r.note}
+                        </p>
+                      )}
+                      <p className="mt-1 text-[10px] text-gray-400">
+                        Due {fmt(r.dueAt)}
+                        {overdue && " · overdue"}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 gap-1">
+                      {!r.done && (
+                        <button
+                          onClick={() => void onDone(r.id)}
+                          className="rounded p-1 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20"
+                          aria-label="Mark done"
+                          title="Mark done"
+                        >
+                          ✓
+                        </button>
+                      )}
+                      <button
+                        onClick={() => void onDelete(r.id)}
+                        className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-red-500 dark:hover:bg-gray-800"
+                        aria-label="Delete"
+                        title="Delete"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        <div className="mt-5">
+          <button
+            onClick={onClose}
+            className="w-full rounded-lg border border-gray-200 py-2.5 text-sm text-gray-600 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }

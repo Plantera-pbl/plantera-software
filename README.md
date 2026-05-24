@@ -16,16 +16,16 @@ A plant monitoring web app. Each plant is paired with a physical sensor device (
 
 ## Tech stack
 
-| Layer | Technology |
-|---|---|
-| Framework | Next.js 15 (App Router) |
-| Language | TypeScript |
-| Auth | Clerk |
-| Database | PostgreSQL via Supabase + Drizzle ORM |
-| API | tRPC |
-| Charts | Recharts |
-| Styling | Tailwind CSS |
-| Deployment | Vercel |
+| Layer      | Technology                            |
+| ---------- | ------------------------------------- |
+| Framework  | Next.js 15 (App Router)               |
+| Language   | TypeScript                            |
+| Auth       | Clerk                                 |
+| Database   | PostgreSQL via Supabase + Drizzle ORM |
+| API        | tRPC                                  |
+| Charts     | Recharts                              |
+| Styling    | Tailwind CSS                          |
+| Deployment | Vercel                                |
 
 ---
 
@@ -61,31 +61,122 @@ Each plant in the database has a **Device ID** field (`topic` column). This is t
 
 ## Notifications
 
-Plantera checks sensor readings on every live poll (every 5 seconds) and fires alerts when values cross defined thresholds. Each alert has a **30-minute cooldown per plant** so you are not flooded with repeated messages.
+Plantera does **not** scold you for things that the device already handles
+automatically (watering, ventilation, grow-light). Instead, the notification
+engine tells you **what the device just did and why**, so you always know the
+state of the system without having to stare at the dashboard.
 
-Alerts appear in two places:
-1. **In-app bell icon** in the top-right header — shows a red badge with the unread count; clicking it opens a dropdown panel listing all past notifications for the current session.
-2. **Browser push notification** — shown by the OS if the user has granted the `Notification` permission.
+Notifications appear in three places:
 
-### Notification types
+1. **In-app bell icon** (top-right header) — red badge with unread count.
+   Each entry shows the title, body, timestamp, a coloured severity bar
+   (green = success, blue = info, amber = warning, red = critical) and a
+   category tag (`watering`, `fan`, `light`, `temperature`, `reminder`).
+2. **Browser push notification** — when the OS `Notification` permission is
+   granted.
+3. **Database** (table `plantera-software_notification`) — every event is
+   persisted with `category`, `severity` and `plantId` so it can be queried
+   later.
 
-| Icon | Key | Trigger condition | Severity |
-|------|-----|-------------------|----------|
-| 💧 | `soil-critical` | Soil moisture **< 15 %** | Critical — water immediately |
-| 💧 | `soil-low` | Soil moisture **< 35 %** | Warning — water in the next 1–2 days |
-| 🌊 | `soil-high` | Soil moisture **> 78 %** | Warning — plant may be overwatered |
-| ☀️ | `light-critical` | Light level **< 10 %** | Critical — plant is in the dark |
-| ☀️ | `light-low` | Light level **< 30 %** | Info — light is low, move closer to a window |
-| 🥶 | `temp-low` | Temperature **< 10 °C** | Warning — too cold, risk of cold shock |
-| 🔥 | `temp-high` | Temperature **> 32 °C** | Warning — too hot, risk of heat stress |
+### Notification engine model
 
-> **Note:** humidity alerts are shown as care guidance cards on the dashboard but do not currently trigger push/bell notifications.
+The engine compares the **previous** sensor snapshot for a plant against the
+**current** one and only fires when a value **crosses** a configured
+threshold. Each device has its own ON / OFF threshold pair, which mirrors a
+classic hysteresis loop:
+
+```
+            soil moisture
+   ──────────────────────────────
+   100% ┤
+        │      OFF threshold ──── stops a notification cycle
+        │                              (e.g. "watering complete")
+        │
+        │      ON  threshold  ──── starts a notification cycle
+        │                              (e.g. "watering started")
+     0% ┤
+```
+
+Because the engine is state-aware, it will not spam: a "watering started"
+event will only ever be followed by a "watering complete" event for the
+same plant, never two starts in a row.
+
+### Notification categories
+
+| Icon | Category      | Fires when …                                                     | Severity  |
+| ---- | ------------- | ---------------------------------------------------------------- | --------- |
+| 💧   | `watering`    | Soil moisture drops **below `wateringOnPct`**                    | `info`    |
+| ✅   | `watering`    | Soil moisture rises **back above `wateringOffPct`**              | `success` |
+| 🌀   | `fan`         | Humidity climbs **above `fanOnPct`**                             | `info`    |
+| ✅   | `fan`         | Humidity falls **back to / below `fanOffPct`**                   | `success` |
+| 💡   | `light`       | Ambient light falls **below `lightOnPct`**                       | `info`    |
+| ✅   | `light`       | Ambient light recovers **to / above `lightOffPct`**              | `success` |
+| 🥶   | `temperature` | Temperature drops **below 10 °C** (device can't heat — advisory) | `warning` |
+| 🔥   | `temperature` | Temperature rises **above 32 °C** (device can't cool — advisory) | `warning` |
+| ✅   | `temperature` | Temperature returns to the comfort range                         | `success` |
+| ⏰   | `reminder`    | A user-scheduled reminder's `dueAt` time passes                  | `info`    |
+
+> **Removed from the old engine:** legacy alerts that told the user to
+> _"water immediately"_, _"move closer to a window"_ or _"move to a brighter
+> spot"_ — the device already takes care of those actions. The new engine
+> instead reports what happened: e.g. _"💧 Living Room Monstera — watering
+> started. Soil moisture 42 % → 28 % dropped below 35 % trigger. The device
+> is delivering water (20 s burst)."_
+
+### Per-plant device configuration
+
+The notification thresholds are not hard-coded — every plant has its own
+`device_config` row, editable from the **⚙ Plant settings** button in the
+header. The configurable knobs are:
+
+| Field                 | Default | Meaning                                                                       |
+| --------------------- | ------- | ----------------------------------------------------------------------------- |
+| `wateringOnPct`       | 35      | Soil % below which a watering cycle starts                                    |
+| `wateringOffPct`      | 60      | Soil % at which a watering cycle is considered complete                       |
+| `wateringDurationSec` | 20      | How long the pump runs each burst (informational)                             |
+| `wateringCooldownMin` | 30      | Minimum minutes between two notifications of the **same** kind / same plant   |
+| `fanOnPct`            | 75      | Humidity % above which the fan starts                                         |
+| `fanOffPct`           | 60      | Humidity % at which the fan stops                                             |
+| `lightOnPct`          | 30      | Light % below which the grow LED turns on                                     |
+| `lightOffPct`         | 55      | Light % at which the grow LED turns off                                       |
+| `quietHours`          | `[]`    | List of `{ start: "HH:mm", end: "HH:mm" }` windows that suppress _all_ alerts |
+| `timezoneOffsetMin`   | 0       | Minutes from UTC used when evaluating `quietHours`                            |
+| `deviceOn`            | `true`  | Master switch — when `false`, the engine emits nothing for that plant         |
+
+The same numbers are also used by the **sensor charts**: the soil-moisture,
+humidity and light panels draw two dashed reference lines (amber = ON,
+green = OFF) and a light green band representing the comfort zone the
+device is trying to maintain.
+
+### Manual reminders
+
+Open the **⏰ clock** button in the header to add ad-hoc reminders, e.g.
+_"Add fertiliser in 30 days"_ or _"Repot in 90 days"_. Each reminder has:
+
+- A `title` (shown in the notification),
+- An optional `note` (the notification body),
+- An optional `plantId` (so the notification is filed against a plant),
+- A `dueAt` timestamp.
+
+The client polls the reminder list every 30 s and, when a reminder's `dueAt`
+is in the past and the reminder is not yet `done`, it fires a single
+notification (cached in-session so it never repeats). Reminders can be
+ticked off (`done = true`) or deleted from the same dialog.
+
+### Quiet hours and the device master switch
+
+When the current local time (UTC + `timezoneOffsetMin`) falls inside any of
+the configured `quietHours` windows — or when `deviceOn = false` — the
+engine still updates its internal state (so transitions are not lost) but
+**does not emit a notification**. This is useful e.g. to silence everything
+between 22:00 and 07:00.
 
 ---
 
 ## Local development
 
 ### Prerequisites
+
 - Node.js 20+
 - A Supabase PostgreSQL database
 - A Clerk application
@@ -103,12 +194,12 @@ npm run dev       # http://localhost:3000
 
 ### Environment variables
 
-| Variable | Description |
-|---|---|
-| `DATABASE_URL` | PostgreSQL connection string (Supabase) |
-| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk publishable key |
-| `CLERK_SECRET_KEY` | Clerk secret key |
-| `NEXT_PUBLIC_BROKER_URL` | Deployed broker base URL (e.g. Railway) |
+| Variable                            | Description                             |
+| ----------------------------------- | --------------------------------------- |
+| `DATABASE_URL`                      | PostgreSQL connection string (Supabase) |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk publishable key                   |
+| `CLERK_SECRET_KEY`                  | Clerk secret key                        |
+| `NEXT_PUBLIC_BROKER_URL`            | Deployed broker base URL (e.g. Railway) |
 
 ### Useful scripts
 
@@ -138,24 +229,26 @@ The broker lives at [github.com/Plantera-pbl/plantera-broker](https://github.com
 
 ### Broker REST API
 
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/api/v1/devices` | List all registered devices |
-| `POST` | `/api/v1/devices` | Register a new device |
-| `DELETE` | `/api/v1/devices/{id}` | Remove a device |
-| `GET` | `/api/v1/devices/{id}/readings` | Reading history (`?limit=100&since=<iso>`) |
-| `GET` | `/api/v1/devices/{id}/readings/latest` | Most recent reading |
-| `POST` | `/api/v1/devices/{id}/push` | Push a reading directly |
-| `WS` | `/api/v1/ws` | Live WebSocket feed |
+| Method   | Path                                   | Description                                |
+| -------- | -------------------------------------- | ------------------------------------------ |
+| `GET`    | `/api/v1/devices`                      | List all registered devices                |
+| `POST`   | `/api/v1/devices`                      | Register a new device                      |
+| `DELETE` | `/api/v1/devices/{id}`                 | Remove a device                            |
+| `GET`    | `/api/v1/devices/{id}/readings`        | Reading history (`?limit=100&since=<iso>`) |
+| `GET`    | `/api/v1/devices/{id}/readings/latest` | Most recent reading                        |
+| `POST`   | `/api/v1/devices/{id}/push`            | Push a reading directly                    |
+| `WS`     | `/api/v1/ws`                           | Live WebSocket feed                        |
 
 ### Broker cheatsheet (PowerShell)
 
 **List all devices**
+
 ```powershell
 Invoke-RestMethod "https://plantera-broker-production.up.railway.app/api/v1/devices"
 ```
 
 **Register a new device** (returns an `id` — save it as the plant's Device ID)
+
 ```powershell
 Invoke-RestMethod -Method Post `
   -Uri "https://plantera-broker-production.up.railway.app/api/v1/devices" `
@@ -164,16 +257,19 @@ Invoke-RestMethod -Method Post `
 ```
 
 **Get last 100 readings for device 1**
+
 ```powershell
 Invoke-RestMethod "https://plantera-broker-production.up.railway.app/api/v1/devices/1/readings"
 ```
 
 **Get the latest reading for device 1**
+
 ```powershell
 Invoke-RestMethod "https://plantera-broker-production.up.railway.app/api/v1/devices/1/readings/latest"
 ```
 
 **Push a manual reading to device 1** (useful for testing without hardware)
+
 ```powershell
 Invoke-RestMethod -Method Post `
   -Uri "https://plantera-broker-production.up.railway.app/api/v1/devices/1/push" `
@@ -182,22 +278,173 @@ Invoke-RestMethod -Method Post `
 ```
 
 **Delete device 1**
+
 ```powershell
 Invoke-RestMethod -Method Delete `
   "https://plantera-broker-production.up.railway.app/api/v1/devices/1"
 ```
 
 **Open interactive API docs**
+
 ```
 https://plantera-broker-production.up.railway.app/docs
 ```
 
 ---
 
+## Testing the notification engine
+
+You can drive the whole notification engine without any hardware by pushing
+crafted readings to the broker's `POST /api/v1/devices/{id}/push` endpoint
+from PowerShell. Pair these commands with the dashboard open in a browser
+(the bell icon updates within ~5 s — the live-poll interval).
+
+> The broker stores `light` and `soil-moisture` as raw ADC values (0–4095)
+> and converts them to 0–100 % when reading. So to simulate **X %** of soil
+> or light: `raw = round(X * 4095 / 100)`.
+>
+> Defaults assumed below: `wateringOnPct = 35`, `wateringOffPct = 60`,
+> `fanOnPct = 75`, `fanOffPct = 60`, `lightOnPct = 30`, `lightOffPct = 55`,
+> `wateringCooldownMin = 30`. Device ID `1` is used; replace as needed.
+
+### Helper
+
+```powershell
+$broker = "https://plantera-broker-production.up.railway.app"
+$dev    = 1
+
+function Push-Reading($soilPct, $lightPct, $temp, $humidity) {
+  $soilRaw  = [int]($soilPct  * 4095 / 100)
+  $lightRaw = [int]($lightPct * 4095 / 100)
+  $body = @{
+    "light"            = $lightRaw
+    "soil-moisture"    = $soilRaw
+    "temp"             = $temp
+    "ambient-humidity" = $humidity
+  } | ConvertTo-Json
+  Invoke-RestMethod -Method Post `
+    -Uri "$broker/api/v1/devices/$dev/push" `
+    -ContentType "application/json" -Body $body
+  Start-Sleep -Seconds 6   # let the dashboard poll once
+}
+```
+
+### Test 1 — watering cycle (start → complete)
+
+```powershell
+# Seed a "normal" reading first so the prev snapshot is established
+Push-Reading 50 50 22 55
+# Drop below wateringOnPct (35) → should fire "💧 watering started"
+Push-Reading 28 50 22 55
+# Climb above wateringOffPct (60) → should fire "✅ watering complete"
+Push-Reading 65 50 22 55
+```
+
+**Expected:** two notifications appear in the bell. First is blue/info
+("watering started", body mentions `50% → 28%` and the 20 s burst); second
+is green/success ("watering complete", body mentions `28% → 65%`).
+
+### Test 2 — fan cycle (humidity ON / OFF)
+
+```powershell
+Push-Reading 50 50 22 60   # baseline
+Push-Reading 50 50 22 85   # > fanOnPct (75)  → "🌀 fan started"
+Push-Reading 50 50 22 55   # <= fanOffPct (60) → "✅ fan stopped"
+```
+
+**Expected:** two notifications, category `fan`, info then success.
+
+### Test 3 — grow-light cycle
+
+```powershell
+Push-Reading 50 60 22 55   # baseline
+Push-Reading 50 18 22 55   # < lightOnPct (30) → "💡 grow light on"
+Push-Reading 50 70 22 55   # >= lightOffPct (55) → "✅ grow light off"
+```
+
+**Expected:** two notifications, category `light`, info then success.
+
+### Test 4 — temperature advisory (device cannot fix)
+
+```powershell
+Push-Reading 50 50 7 55    # < 10 °C   → "🥶 cold reading", severity warning
+Push-Reading 50 50 22 55   # back to OK → "✅ temperature back to normal"
+Push-Reading 50 50 35 55   # > 32 °C   → "🔥 hot reading", severity warning
+```
+
+**Expected:** three notifications, category `temperature`. The cold and
+hot ones are amber (`warning`), the recovery one is green (`success`).
+
+### Test 5 — cooldown is respected
+
+```powershell
+Push-Reading 50 50 22 55   # baseline
+Push-Reading 28 50 22 55   # fires "watering started"
+Push-Reading 65 50 22 55   # fires "watering complete"
+Push-Reading 28 50 22 55   # within cooldown → NO new notification
+Push-Reading 65 50 22 55   # within cooldown → NO new notification
+```
+
+**Expected:** only the first two events fire. The next two are suppressed
+because the same event keys are still inside their `wateringCooldownMin`
+window (default 30 min). Lower `wateringCooldownMin` to `0` in **⚙ Plant
+settings** to bypass.
+
+### Test 6 — quiet hours suppress everything
+
+In **⚙ Plant settings** add a quiet window covering _right now_
+(e.g. `00:00 → 23:59`) and save, then run:
+
+```powershell
+Push-Reading 50 50 22 55
+Push-Reading 28 50 22 55   # would normally fire watering-start
+Push-Reading 50 50 22 85   # would normally fire fan-start
+```
+
+**Expected:** **no** new notifications appear. The engine still updates its
+internal transition state (so when quiet hours end, the next legitimate
+crossing fires correctly), but emits nothing during the window.
+
+### Test 7 — device master switch
+
+In **⚙ Plant settings** turn **Device enabled** off, save, then run any of
+the scenarios above.
+
+**Expected:** zero notifications. Same as quiet hours, but global for that
+plant regardless of the clock.
+
+### Test 8 — manual reminders
+
+1. Click the ⏰ button in the header.
+2. Add a reminder with **In how many days = 0** (the form rounds up to a
+   `dueAt` of now-ish; for instant testing you can edit the row in
+   `plantera-software_reminder` and set `dueAt` to `now()`).
+3. Within 30 s the bell shows a new `⏰ Reminder: <title>` notification
+   (category `reminder`, severity `info`).
+4. Click the green ✓ in the reminders dialog → the row is marked `done`
+   and will not fire again.
+
+**Expected:** one notification per reminder, exactly once per session.
+
+### Verifying directly in the database
+
+```sql
+SELECT id, category, severity, title, body, "plantId", "createdAt"
+FROM "plantera-software_notification"
+ORDER BY "createdAt" DESC
+LIMIT 20;
+```
+
+You should see the rows in the same order the bell shows them.
+
+---
+
 ## Deployment
 
 ### Software (Vercel)
+
 Push to `main` — Vercel deploys automatically. Add all environment variables under **Project → Settings → Environment Variables**.
 
 ### Broker (Railway)
+
 The broker is deployed from the `plantera-broker` GitHub repo. Railway rebuilds on every push to `main`. Environment variables are managed in the Railway project dashboard.

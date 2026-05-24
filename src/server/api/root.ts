@@ -1,6 +1,8 @@
 import { postRouter } from "@/server/api/routers/post";
 import { plantRouter } from "@/server/api/routers/plant";
 import { notificationRouter } from "@/server/api/routers/notification";
+import { configRouter } from "@/server/api/routers/config";
+import { reminderRouter } from "@/server/api/routers/reminder";
 import { createCallerFactory, createTRPCRouter } from "@/server/api/trpc";
 
 /**
@@ -12,6 +14,8 @@ export const appRouter = createTRPCRouter({
   post: postRouter,
   plant: plantRouter,
   notification: notificationRouter,
+  config: configRouter,
+  reminder: reminderRouter,
 });
 
 // export type definition of API

@@ -19,6 +19,9 @@ export const notificationRouter = createTRPCRouter({
       z.object({
         title: z.string().min(1).max(512),
         body: z.string().min(1),
+        plantId: z.number().int().optional(),
+        category: z.string().max(64).optional(),
+        severity: z.enum(["info", "success", "warning", "critical"]).optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -28,6 +31,9 @@ export const notificationRouter = createTRPCRouter({
           userId: ctx.userId,
           title: input.title,
           body: input.body,
+          plantId: input.plantId ?? null,
+          category: input.category ?? "info",
+          severity: input.severity ?? "info",
         })
         .returning();
       return notif;
@@ -43,5 +49,11 @@ export const notificationRouter = createTRPCRouter({
           eq(notifications.read, false),
         ),
       );
+  }),
+
+  clearAll: protectedProcedure.mutation(async ({ ctx }) => {
+    await ctx.db
+      .delete(notifications)
+      .where(eq(notifications.userId, ctx.userId));
   }),
 });
