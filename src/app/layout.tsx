@@ -4,6 +4,7 @@ import { ClerkProvider } from "@clerk/nextjs";
 import { type Metadata, type Viewport } from "next";
 import { Geist } from "next/font/google";
 
+import { ThemeProvider } from "@/app/_components/ThemeProvider";
 import { TRPCReactProvider } from "@/trpc/react";
 
 export const metadata: Metadata = {
@@ -70,9 +71,13 @@ export default function RootLayout({
         },
       }}
     >
-      <html lang="en" className={`${geist.variable}`}>
+      <html lang="en" className={`${geist.variable}`} suppressHydrationWarning>
         <body>
-          <TRPCReactProvider>{children}</TRPCReactProvider>
+          <TRPCReactProvider>
+            <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+              {children}
+            </ThemeProvider>
+          </TRPCReactProvider>
         </body>
       </html>
     </ClerkProvider>

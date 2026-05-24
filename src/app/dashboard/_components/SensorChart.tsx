@@ -8,6 +8,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
+import { useTheme } from "next-themes";
 
 interface Props {
   data: { time: string; value: number }[];
@@ -18,6 +19,9 @@ interface Props {
 }
 
 export function SensorChart({ data, color, min, max, unit }: Props) {
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
+
   return (
     <ResponsiveContainer width="100%" height={120}>
       <LineChart
@@ -26,24 +30,25 @@ export function SensorChart({ data, color, min, max, unit }: Props) {
       >
         <XAxis
           dataKey="time"
-          tick={{ fontSize: 10, fill: "#9ca3af" }}
+          tick={{ fontSize: 10, fill: isDark ? "#6b7280" : "#9ca3af" }}
           tickLine={false}
           axisLine={false}
           interval={5}
         />
         <YAxis
           domain={[min, max]}
-          tick={{ fontSize: 10, fill: "#9ca3af" }}
+          tick={{ fontSize: 10, fill: isDark ? "#6b7280" : "#9ca3af" }}
           tickLine={false}
           axisLine={false}
         />
         <Tooltip
           contentStyle={{
-            background: "white",
-            border: "1px solid #f3f4f6",
+            background: isDark ? "#1f2937" : "white",
+            border: `1px solid ${isDark ? "#374151" : "#f3f4f6"}`,
             borderRadius: 8,
             fontSize: 12,
             boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+            color: isDark ? "#f3f4f6" : "#111827",
           }}
           formatter={(value) => [`${value as number}${unit}`, ""]}
         />

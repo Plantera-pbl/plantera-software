@@ -6,6 +6,7 @@ import { UserButton } from "@clerk/nextjs";
 import { SensorChart } from "./SensorChart";
 import { useNotifications } from "./useNotifications";
 import { api } from "@/trpc/react";
+import { ThemeToggle } from "@/app/_components/ThemeToggle";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -596,7 +597,7 @@ export function Dashboard() {
   const sidebarContent = (
     <>
       <div className="flex-1 overflow-y-auto p-3">
-        <p className="mb-2 px-2 text-xs font-medium tracking-wider text-gray-400 uppercase">
+        <p className="mb-2 px-2 text-xs font-medium tracking-wider text-gray-400 uppercase dark:text-gray-500">
           My Plants
         </p>
         {isLoading ? (
@@ -604,7 +605,7 @@ export function Dashboard() {
             {[1, 2].map((i) => (
               <div
                 key={i}
-                className="h-10 animate-pulse rounded-lg bg-gray-100"
+                className="h-10 animate-pulse rounded-lg bg-gray-100 dark:bg-gray-800"
               />
             ))}
           </div>
@@ -614,7 +615,7 @@ export function Dashboard() {
               <button
                 key={p.id}
                 onClick={() => selectPlant(p.id)}
-                className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition ${selectedId === p.id ? "bg-green-50 text-green-800" : "text-gray-600 hover:bg-gray-50"}`}
+                className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition ${selectedId === p.id ? "bg-green-50 text-green-800 dark:bg-green-900/20 dark:text-green-400" : "text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800"}`}
               >
                 {p.photo ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -630,7 +631,7 @@ export function Dashboard() {
                 )}
                 <div className="min-w-0">
                   <div className="truncate font-medium">{p.name}</div>
-                  <div className="truncate text-xs text-gray-400">
+                  <div className="truncate text-xs text-gray-400 dark:text-gray-500">
                     {p.species}
                   </div>
                 </div>
@@ -645,7 +646,7 @@ export function Dashboard() {
             setSidebarOpen(false);
             setShowAdd(true);
           }}
-          className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-green-300 py-2.5 text-sm text-green-600 transition hover:bg-green-50"
+          className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-green-300 py-2.5 text-sm text-green-600 transition hover:bg-green-50 dark:border-green-700 dark:text-green-400 dark:hover:bg-green-900/20"
         >
           <span className="text-lg leading-none">+</span> Add plant
         </button>
@@ -654,9 +655,9 @@ export function Dashboard() {
   );
 
   return (
-    <div className="flex h-[100dvh] flex-col bg-gray-50">
+    <div className="flex h-[100dvh] flex-col bg-gray-50 dark:bg-gray-950">
       {/* Top bar */}
-      <header className="flex h-14 shrink-0 items-center justify-between border-b border-gray-200 bg-white px-4">
+      <header className="flex h-14 shrink-0 items-center justify-between border-b border-gray-200 bg-white px-4 dark:border-gray-700 dark:bg-gray-900">
         {/* Mobile: hamburger */}
         <button
           className="flex items-center gap-2 md:hidden"
@@ -664,7 +665,7 @@ export function Dashboard() {
           aria-label="Open plant list"
         >
           <svg
-            className="h-5 w-5 text-gray-500"
+            className="h-5 w-5 text-gray-500 dark:text-gray-400"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -676,14 +677,16 @@ export function Dashboard() {
               d="M4 6h16M4 12h16M4 18h16"
             />
           </svg>
-          <span className="text-sm font-medium text-gray-700">
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
             {selected?.name ?? "Plants"}
           </span>
         </button>
         {/* Desktop: logo */}
         <Link href="/" className="hidden items-center gap-2 md:flex">
           <span className="text-xl">🌱</span>
-          <span className="font-semibold text-green-800">Plantera</span>
+          <span className="font-semibold text-green-800 dark:text-green-400">
+            Plantera
+          </span>
         </Link>
         <div className="flex items-center gap-3">
           {/* Notification bell */}
@@ -694,7 +697,7 @@ export function Dashboard() {
                 if (!notifOpen) void markAllReadMutation.mutateAsync();
               }}
               aria-label="Notifications"
-              className="relative rounded-lg p-2 text-gray-500 transition hover:bg-gray-100"
+              className="relative rounded-lg p-2 text-gray-500 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
             >
               <svg
                 className="h-5 w-5"
@@ -722,13 +725,14 @@ export function Dashboard() {
               />
             )}
           </div>
+          <ThemeToggle />
           <UserButton />
         </div>
       </header>
 
       <div className="flex min-h-0 flex-1">
         {/* Desktop sidebar */}
-        <aside className="hidden w-56 shrink-0 flex-col border-r border-gray-200 bg-white md:flex">
+        <aside className="hidden w-56 shrink-0 flex-col border-r border-gray-200 bg-white md:flex dark:border-gray-700 dark:bg-gray-900">
           {sidebarContent}
         </aside>
 
@@ -748,7 +752,7 @@ export function Dashboard() {
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
               <div className="text-4xl">🌱</div>
-              <p className="text-sm text-gray-400">
+              <p className="text-sm text-gray-400 dark:text-gray-500">
                 No plants yet. Add your first plant!
               </p>
               <button
@@ -770,18 +774,20 @@ export function Dashboard() {
         >
           <div className="absolute inset-0 bg-black/30" />
           <div
-            className="absolute top-0 bottom-0 left-0 flex w-72 flex-col bg-white shadow-xl"
+            className="absolute top-0 bottom-0 left-0 flex w-72 flex-col bg-white shadow-xl dark:bg-gray-900"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex h-14 shrink-0 items-center justify-between border-b border-gray-100 px-4">
+            <div className="flex h-14 shrink-0 items-center justify-between border-b border-gray-100 px-4 dark:border-gray-700">
               <Link href="/" className="flex items-center gap-2">
                 <span className="text-xl">🌱</span>
-                <span className="font-semibold text-green-800">Plantera</span>
+                <span className="font-semibold text-green-800 dark:text-green-400">
+                  Plantera
+                </span>
               </Link>
               <button
                 onClick={() => setSidebarOpen(false)}
                 aria-label="Close"
-                className="text-gray-400 hover:text-gray-600"
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
               >
                 <svg
                   className="h-5 w-5"
@@ -809,18 +815,18 @@ export function Dashboard() {
           className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center"
           onClick={(e) => e.target === e.currentTarget && setShowAdd(false)}
         >
-          <div className="w-full rounded-t-2xl bg-white p-6 shadow-xl sm:max-w-sm sm:rounded-2xl">
-            <h2 className="mb-5 text-lg font-semibold text-gray-900">
+          <div className="w-full rounded-t-2xl bg-white p-6 shadow-xl sm:max-w-sm sm:rounded-2xl dark:bg-gray-900">
+            <h2 className="mb-5 text-lg font-semibold text-gray-900 dark:text-gray-100">
               Add plant
             </h2>
             <div className="space-y-3">
               {/* Photo upload */}
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">
+                <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
                   Photo (optional)
                 </label>
                 <div
-                  className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-200 py-4 transition hover:border-green-300 hover:bg-green-50"
+                  className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-200 py-4 transition hover:border-green-300 hover:bg-green-50 dark:border-gray-700 dark:hover:border-green-600 dark:hover:bg-green-900/10"
                   onClick={() => photoInputRef.current?.click()}
                 >
                   {form.photo ? (
@@ -833,7 +839,7 @@ export function Dashboard() {
                   ) : (
                     <>
                       <span className="text-2xl">📷</span>
-                      <span className="mt-1 text-xs text-gray-400">
+                      <span className="mt-1 text-xs text-gray-400 dark:text-gray-500">
                         Tap to upload
                       </span>
                     </>
@@ -849,7 +855,7 @@ export function Dashboard() {
                 />
                 {form.photo && (
                   <button
-                    className="mt-1 text-xs text-gray-400 hover:text-gray-600"
+                    className="mt-1 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                     onClick={() => setForm((f) => ({ ...f, photo: null }))}
                   >
                     Remove photo
@@ -894,7 +900,7 @@ export function Dashboard() {
                   setShowAdd(false);
                   setForm({ name: "", species: "", topic: "", photo: null });
                 }}
-                className="flex-1 rounded-lg border border-gray-200 py-2.5 text-sm text-gray-600 transition hover:bg-gray-50"
+                className="flex-1 rounded-lg border border-gray-200 py-2.5 text-sm text-gray-600 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
               >
                 Cancel
               </button>
@@ -916,18 +922,18 @@ export function Dashboard() {
           className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center"
           onClick={(e) => e.target === e.currentTarget && setShowEdit(false)}
         >
-          <div className="w-full rounded-t-2xl bg-white p-6 shadow-xl sm:max-w-sm sm:rounded-2xl">
-            <h2 className="mb-5 text-lg font-semibold text-gray-900">
+          <div className="w-full rounded-t-2xl bg-white p-6 shadow-xl sm:max-w-sm sm:rounded-2xl dark:bg-gray-900">
+            <h2 className="mb-5 text-lg font-semibold text-gray-900 dark:text-gray-100">
               Edit plant
             </h2>
             <div className="space-y-3">
               {/* Photo upload */}
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">
+                <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
                   Photo (optional)
                 </label>
                 <div
-                  className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-200 py-4 transition hover:border-green-300 hover:bg-green-50"
+                  className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-200 py-4 transition hover:border-green-300 hover:bg-green-50 dark:border-gray-700 dark:hover:border-green-600 dark:hover:bg-green-900/10"
                   onClick={() => editPhotoInputRef.current?.click()}
                 >
                   {editForm.photo ? (
@@ -940,7 +946,7 @@ export function Dashboard() {
                   ) : (
                     <>
                       <span className="text-2xl">📷</span>
-                      <span className="mt-1 text-xs text-gray-400">
+                      <span className="mt-1 text-xs text-gray-400 dark:text-gray-500">
                         Tap to upload
                       </span>
                     </>
@@ -956,7 +962,7 @@ export function Dashboard() {
                 />
                 {editForm.photo && (
                   <button
-                    className="mt-1 text-xs text-gray-400 hover:text-gray-600"
+                    className="mt-1 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                     onClick={() => setEditForm((f) => ({ ...f, photo: null }))}
                   >
                     Remove photo
@@ -998,7 +1004,7 @@ export function Dashboard() {
             <div className="mt-5 flex gap-3">
               <button
                 onClick={() => setShowEdit(false)}
-                className="flex-1 rounded-lg border border-gray-200 py-2.5 text-sm text-gray-600 transition hover:bg-gray-50"
+                className="flex-1 rounded-lg border border-gray-200 py-2.5 text-sm text-gray-600 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
               >
                 Cancel
               </button>
@@ -1023,7 +1029,13 @@ function NotificationDropdown({
   notifications,
   onClose,
 }: {
-  notifications: { id: number; title: string; body: string; read: boolean; createdAt: Date }[];
+  notifications: {
+    id: number;
+    title: string;
+    body: string;
+    read: boolean;
+    createdAt: Date;
+  }[];
   onClose: () => void;
 }) {
   function formatTime(d: Date) {
@@ -1034,14 +1046,14 @@ function NotificationDropdown({
   }
 
   return (
-    <div className="absolute right-0 top-full z-50 mt-2 w-80 rounded-xl border border-gray-100 bg-white shadow-lg">
-      <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
-        <span className="text-sm font-semibold text-gray-800">
+    <div className="absolute top-full right-0 z-50 mt-2 w-80 rounded-xl border border-gray-100 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900">
+      <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 dark:border-gray-700">
+        <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">
           Notifications
         </span>
         <button
           onClick={onClose}
-          className="text-xs text-gray-400 hover:text-gray-600"
+          className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
         >
           Close
         </button>
@@ -1055,10 +1067,12 @@ function NotificationDropdown({
           notifications.map((n) => (
             <div
               key={n.id}
-              className="border-b border-gray-50 px-4 py-3 last:border-0"
+              className="border-b border-gray-50 px-4 py-3 last:border-0 dark:border-gray-800"
             >
               <div className="flex items-start justify-between gap-2">
-                <p className="text-sm font-medium text-gray-800">{n.title}</p>
+                <p className="text-sm font-medium text-gray-800 dark:text-gray-200">
+                  {n.title}
+                </p>
                 <span className="shrink-0 text-[10px] text-gray-400">
                   {formatTime(n.createdAt)}
                 </span>
@@ -1118,15 +1132,15 @@ function PlantView({
           </div>
         )}
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-xl font-bold text-gray-900 sm:text-2xl">
+          <h1 className="truncate text-xl font-bold text-gray-900 sm:text-2xl dark:text-gray-100">
             {plant.name}
           </h1>
-          <p className="truncate text-sm text-gray-400 italic">
+          <p className="truncate text-sm text-gray-400 italic dark:text-gray-500">
             {plant.species}
           </p>
           <div className="mt-1 flex items-center gap-1.5">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-green-500" />
-            <span className="truncate font-mono text-xs text-gray-400">
+            <span className="truncate font-mono text-xs text-gray-400 dark:text-gray-500">
               {plant.topic}
             </span>
           </div>
@@ -1135,7 +1149,9 @@ function PlantView({
         <div className="flex shrink-0 items-center gap-2">
           {confirmDelete ? (
             <>
-              <span className="text-xs text-gray-500">Remove?</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                Remove?
+              </span>
               <button
                 onClick={() => onDelete(plant.id)}
                 disabled={isDeleting}
@@ -1145,7 +1161,7 @@ function PlantView({
               </button>
               <button
                 onClick={() => setConfirmDelete(false)}
-                className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-500 transition hover:bg-gray-50"
+                className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-500 transition hover:bg-gray-50 dark:border-gray-600 dark:text-gray-400 dark:hover:bg-gray-800"
               >
                 No
               </button>
@@ -1154,7 +1170,7 @@ function PlantView({
             <>
               <button
                 onClick={() => onEdit(plant.id)}
-                className="rounded-lg border border-gray-200 p-2 text-gray-400 transition hover:border-green-200 hover:text-green-500"
+                className="rounded-lg border border-gray-200 p-2 text-gray-400 transition hover:border-green-200 hover:text-green-500 dark:border-gray-600 dark:hover:border-green-700"
                 aria-label="Edit plant"
               >
                 <svg
@@ -1173,7 +1189,7 @@ function PlantView({
               </button>
               <button
                 onClick={() => setConfirmDelete(true)}
-                className="rounded-lg border border-gray-200 p-2 text-gray-400 transition hover:border-red-200 hover:text-red-400"
+                className="rounded-lg border border-gray-200 p-2 text-gray-400 transition hover:border-red-200 hover:text-red-400 dark:border-gray-600 dark:hover:border-red-700"
                 aria-label="Delete plant"
               >
                 <svg
@@ -1203,16 +1219,18 @@ function PlantView({
           return (
             <div
               key={s.key}
-              className="rounded-xl bg-white p-3 shadow-sm sm:p-4"
+              className="rounded-xl bg-white p-3 shadow-sm sm:p-4 dark:bg-gray-900"
             >
               <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-500">{s.label}</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  {s.label}
+                </span>
                 <span className="text-base">{s.icon}</span>
               </div>
-              <div className="mt-2 text-xl font-bold text-gray-900 tabular-nums sm:text-2xl">
+              <div className="mt-2 text-xl font-bold text-gray-900 tabular-nums sm:text-2xl dark:text-gray-100">
                 {s.format(value)}
               </div>
-              <div className="mt-3 h-1 w-full rounded-full bg-gray-100">
+              <div className="mt-3 h-1 w-full rounded-full bg-gray-100 dark:bg-gray-700">
                 <div
                   className="h-1 rounded-full transition-[width] duration-700"
                   style={{
@@ -1221,17 +1239,19 @@ function PlantView({
                   }}
                 />
               </div>
-              <div className="mt-1.5 text-xs text-gray-400">{s.sub}</div>
+              <div className="mt-1.5 text-xs text-gray-400 dark:text-gray-500">
+                {s.sub}
+              </div>
             </div>
           );
         })}
       </div>
 
       {/* Charts */}
-      <div className="rounded-xl bg-white p-4 shadow-sm">
+      <div className="rounded-xl bg-white p-4 shadow-sm dark:bg-gray-900">
         {/* Time range filter */}
         <div className="mb-3 flex items-center justify-between">
-          <span className="text-sm font-medium text-gray-700">
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
             Sensor history
           </span>
           <div className="flex gap-1">
@@ -1239,7 +1259,7 @@ function PlantView({
               <button
                 key={r.label}
                 onClick={() => setTimePoints(r.points)}
-                className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${timePoints === r.points ? "bg-green-600 text-white" : "text-gray-500 hover:bg-gray-100"}`}
+                className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${timePoints === r.points ? "bg-green-600 text-white" : "text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"}`}
               >
                 {r.label}
               </button>
@@ -1248,10 +1268,13 @@ function PlantView({
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {SENSORS.map((s) => (
-            <div key={s.key} className="rounded-xl bg-gray-50 p-3">
+            <div
+              key={s.key}
+              className="rounded-xl bg-gray-50 p-3 dark:bg-gray-800"
+            >
               <div className="mb-2 flex items-center gap-2">
                 <span className="text-sm">{s.icon}</span>
-                <span className="text-sm font-medium text-gray-700">
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
                   {s.label}
                 </span>
               </div>
@@ -1268,15 +1291,15 @@ function PlantView({
       </div>
 
       {/* Guidance */}
-      <div className="rounded-xl bg-white p-4 shadow-sm sm:p-5">
-        <h2 className="mb-4 text-sm font-semibold text-gray-700">
+      <div className="rounded-xl bg-white p-4 shadow-sm sm:p-5 dark:bg-gray-900">
+        <h2 className="mb-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
           Care Guidance
         </h2>
         <div className="space-y-2">
           {guidance.map((g, i) => (
             <div
               key={i}
-              className={`flex items-start gap-3 rounded-lg p-3 text-sm ${g.type === "warning" ? "bg-amber-50 text-amber-800" : g.type === "success" ? "bg-green-50 text-green-800" : "bg-blue-50 text-blue-800"}`}
+              className={`flex items-start gap-3 rounded-lg p-3 text-sm ${g.type === "warning" ? "bg-amber-50 text-amber-800 dark:bg-amber-900/20 dark:text-amber-300" : g.type === "success" ? "bg-green-50 text-green-800 dark:bg-green-900/20 dark:text-green-300" : "bg-blue-50 text-blue-800 dark:bg-blue-900/20 dark:text-blue-300"}`}
             >
               <span className="mt-0.5 shrink-0 text-base">{g.icon}</span>
               <div>
@@ -1302,7 +1325,7 @@ function Field({
 }) {
   return (
     <div>
-      <label className="mb-1 block text-sm font-medium text-gray-700">
+      <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
         {label}
       </label>
       {children}
