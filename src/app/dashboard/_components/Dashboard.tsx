@@ -135,6 +135,22 @@ async function fetchHistory(
   }
 }
 
+async function sendDeviceCommand(
+  deviceId: string,
+  enabled: boolean,
+): Promise<void> {
+  if (!BROKER_URL || !deviceId) return;
+  try {
+    await fetch(`${BROKER_URL}/api/v1/devices/${deviceId}/command`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ command: enabled ? "enable" : "disable" }),
+    });
+  } catch {
+    // Fire-and-forget; broker may not have a command endpoint yet
+  }
+}
+
 function toHistoryPoint(r: BrokerReading): {
   time: string;
   light: number;
@@ -621,6 +637,19 @@ export function Dashboard() {
       setSelectedId(plants.find((p) => p.id !== id)?.id ?? "");
   }
 
+  async function handleToggleDevice() {
+    if (!hasSelectedDbId) return;
+    const newDeviceOn = !activeConfig.deviceOn;
+    await upsertConfig.mutateAsync({
+      plantId: selectedDbId,
+      ...activeConfig,
+      deviceOn: newDeviceOn,
+    });
+    if (selectedTopic) {
+      void sendDeviceCommand(selectedTopic, newDeviceOn);
+    }
+  }
+
   function handleEditOpen(id: string) {
     const plant = plants.find((p) => p.id === id);
     if (!plant) return;
@@ -871,6 +900,8 @@ export function Dashboard() {
               onDelete={handleDelete}
               onEdit={handleEditOpen}
               isDeleting={deletePlant.isPending}
+              onToggleDevice={handleToggleDevice}
+              isTogglingDevice={upsertConfig.isPending}
             />
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
@@ -1273,12 +1304,16 @@ function PlantView({
   onDelete,
   onEdit,
   isDeleting,
+  onToggleDevice,
+  isTogglingDevice,
 }: {
   plant: Plant;
   config: DeviceConfig;
   onDelete: (id: string) => void;
   onEdit: (id: string) => void;
   isDeleting: boolean;
+  onToggleDevice: () => Promise<void>;
+  isTogglingDevice: boolean;
 }) {
   const guidance = getGuidance(plant.sensors);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -1326,8 +1361,40 @@ function PlantView({
             </span>
           </div>
         </div>
-        {/* Edit + Delete */}
+        {/* Power toggle + Edit + Delete */}
         <div className="flex shrink-0 items-center gap-2">
+          {/* Device on/off toggle */}
+          <button
+            onClick={() => void onToggleDevice()}
+            disabled={isTogglingDevice}
+            aria-label={config.deviceOn ? "Turn device off" : "Turn device on"}
+            title={config.deviceOn ? "Device is ON — click to turn off" : "Device is OFF — click to turn on"}
+            className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition disabled:opacity-40 ${
+              config.deviceOn
+                ? "border-green-300 bg-green-50 text-green-700 hover:bg-green-100 dark:border-green-700 dark:bg-green-900/20 dark:text-green-400 dark:hover:bg-green-900/30"
+                : "border-gray-300 bg-gray-50 text-gray-500 hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
+            }`}
+          >
+            {isTogglingDevice ? (
+              <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+            ) : (
+              <svg
+                className="h-3.5 w-3.5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M5.636 5.636a9 9 0 1012.728 0M12 3v9"
+                />
+              </svg>
+            )}
+            {config.deviceOn ? "ON" : "OFF"}
+          </button>
+
           {confirmDelete ? (
             <>
               <span className="text-xs text-gray-500 dark:text-gray-400">
