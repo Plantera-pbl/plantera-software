@@ -56,6 +56,7 @@ Each plant in the database has a **Device ID** field (`topic` column). This is t
 
 - `GET /api/v1/devices/{id}/readings` — load chart history on plant select
 - `GET /api/v1/devices/{id}/readings/latest` — poll every 5 s for live data
+- `PATCH /api/v1/devices/{id}/config` — push updated automation config whenever the user saves plant settings or toggles the device on/off
 
 ---
 
@@ -231,13 +232,139 @@ The broker lives at [github.com/Plantera-pbl/plantera-broker](https://github.com
 
 | Method   | Path                                   | Description                                |
 | -------- | -------------------------------------- | ------------------------------------------ |
-| `GET`    | `/api/v1/devices`                      | List all registered devices                |
+| `GET`    | `/api/v1/devices`                      | List all registered devices (includes `config`) |
 | `POST`   | `/api/v1/devices`                      | Register a new device                      |
 | `DELETE` | `/api/v1/devices/{id}`                 | Remove a device                            |
+| `GET`    | `/api/v1/devices/{id}/config`          | Get device automation config               |
+| `PATCH`  | `/api/v1/devices/{id}/config`          | Update device automation config            |
 | `GET`    | `/api/v1/devices/{id}/readings`        | Reading history (`?limit=100&since=<iso>`) |
 | `GET`    | `/api/v1/devices/{id}/readings/latest` | Most recent reading                        |
 | `POST`   | `/api/v1/devices/{id}/push`            | Push a reading directly                    |
 | `WS`     | `/api/v1/ws`                           | Live WebSocket feed                        |
+
+### Message structure: software → broker (config sync)
+
+Every time the user saves plant settings or toggles the device on/off, the
+software sends a `PATCH /api/v1/devices/{id}/config` request with the
+following JSON body.  The broker stores this in `Device.config` (SQLite JSON
+column) and, when MQTT is enabled, immediately publishes it as a **retained**
+message to `iot/devices/{id}/config` so the firmware receives it on its next
+connect.
+
+```jsonc
+// PATCH /api/v1/devices/{id}/config
+{
+  "device_state":         1,           // 1 = enabled, 0 = disabled (master kill-switch)
+  "watering_cooldown":    30,          // minutes — minimum gap between watering cycles
+  "watering_duration":    20,          // seconds — how long the pump runs per burst
+  "watering_moisture_on": 35.0,        // % — soil moisture below which watering starts
+  "watering_moisture_off":60.0,        // % — soil moisture above which watering stops
+  "fan_humidity_on":      75.0,        // % — ambient humidity above which the fan starts
+  "fan_humidity_off":     60.0,        // % — ambient humidity below which the fan stops
+  "light_intensity_on":   30.0,        // % — light level below which the grow LED turns on
+  "light_intensity_off":  55.0,        // % — light level above which the grow LED turns off
+  "non_working_windows":  ["22:00-06:00"] // list of "HH:MM-HH:MM" quiet windows (GMT+3)
+}
+```
+
+#### Field mapping: software ↔ broker
+
+The software stores config using camelCase names in PostgreSQL; the broker
+uses snake_case names in its own SQLite database.  The conversion happens in
+`sendDeviceConfig()` in `src/app/dashboard/_components/Dashboard.tsx`.
+
+| Software field (`DeviceConfig`) | Broker field (`Device.config`) | Type / unit |
+| ------------------------------- | ------------------------------ | ----------- |
+| `deviceOn` (boolean)            | `device_state` (0 or 1)        | int |
+| `wateringCooldownMin`           | `watering_cooldown`            | minutes (int) |
+| `wateringDurationSec`           | `watering_duration`            | seconds (int) |
+| `wateringOnPct`                 | `watering_moisture_on`         | % (float) |
+| `wateringOffPct`                | `watering_moisture_off`        | % (float) |
+| `fanOnPct`                      | `fan_humidity_on`              | % (float) |
+| `fanOffPct`                     | `fan_humidity_off`             | % (float) |
+| `lightOnPct`                    | `light_intensity_on`           | % (float) |
+| `lightOffPct`                   | `light_intensity_off`          | % (float) |
+| `quietHours: [{start, end}]`    | `non_working_windows: ["HH:MM-HH:MM"]` | string list |
+| `timezoneOffsetMin`             | *(omitted — browser-only)*     | — |
+
+> **Note:** `timezoneOffsetMin` is used only by the browser notification
+> engine for evaluating quiet hours locally. It is not sent to the broker
+> because the broker evaluates `non_working_windows` in GMT+3.
+
+#### When is this message sent?
+
+| User action | Triggered by |
+| ----------- | ------------ |
+| Save **⚙ Plant settings** dialog | `SettingsDialog.onSave` → `sendDeviceConfig()` |
+| Toggle **Device enabled** switch in the header | `handleToggleDevice()` → `sendDeviceConfig()` |
+
+### Message structure: broker → software (sensor readings)
+
+The software receives sensor data from the broker via two REST endpoints:
+
+**`GET /api/v1/devices/{id}/readings/latest`** — polled every 5 s
+
+**`GET /api/v1/devices/{id}/readings?limit=48`** — loaded once on plant select
+
+Both return `ReadingOut` objects:
+
+```jsonc
+{
+  "id":               42,
+  "device_id":        1,
+  "timestamp":        "2026-06-10T14:32:00+00:00",   // ISO-8601 UTC
+  "payload":          { "light": 2048, "soil-moisture": 1024, "temp": 23.5, "ambient-humidity": 61.2 },
+  "light":            50.01,        // % (0–100), converted from raw ADC by broker
+  "soil_moisture":    25.0,         // % (0–100), converted from raw ADC by broker
+  "temp":             23.5,         // °C (-40–80), passed through as-is
+  "ambient_humidity": 61.2          // % (0–100), passed through as-is
+}
+```
+
+`payload` contains the raw values exactly as the microcontroller sent them.
+The top-level `light` and `soil_moisture` fields are already converted from
+12-bit ADC counts (0–4095) to percentages (0–100 %) by the broker:
+`pct = round(raw / 4095 * 100, 2)`.  `temp` and `ambient_humidity` are
+passed through unchanged.
+
+### Message structure: software → broker (push reading, for testing)
+
+**`POST /api/v1/devices/{id}/push`** — used by `serial_bridge.py` or manual
+test scripts.  The body contains raw sensor values:
+
+```jsonc
+// POST /api/v1/devices/{id}/push
+{
+  "light":            2048,   // raw ADC 0–4095 (broker converts to %)
+  "soil-moisture":    1024,   // raw ADC 0–4095 (broker converts to %)  ← note hyphen
+  "temp":             23.5,   // °C, passed through as-is
+  "ambient-humidity": 61.2    // %, passed through as-is               ← note hyphen
+}
+```
+
+Note the **hyphenated keys** (`soil-moisture`, `ambient-humidity`).  The
+broker stores them verbatim in `payload` and writes the converted values into
+the dedicated `soil_moisture` / `ambient_humidity` columns.
+
+### Message structure: broker → software (WebSocket live feed)
+
+Connect to `WS /api/v1/ws` to receive new readings in real time.  Each
+message is a JSON string:
+
+```jsonc
+{
+  "device":    "esp32-livingroom",             // device name string
+  "timestamp": "2026-06-10T14:32:00+00:00",   // ISO-8601 UTC
+  "data": {
+    "light":            50.01,   // % (already converted)
+    "soil_moisture":    25.0,    // % (already converted)  ← note underscore
+    "temp":             23.5,    // °C
+    "ambient_humidity": 61.2     // %
+  }
+}
+```
+
+---
 
 ### Broker cheatsheet (PowerShell)
 
@@ -282,6 +409,32 @@ Invoke-RestMethod -Method Post `
 ```powershell
 Invoke-RestMethod -Method Delete `
   "https://plantera-broker-production.up.railway.app/api/v1/devices/1"
+```
+
+**Get the current config for device 1**
+
+```powershell
+Invoke-RestMethod "https://plantera-broker-production.up.railway.app/api/v1/devices/1/config"
+```
+
+**Update config for device 1** (replaces the full config object)
+
+```powershell
+Invoke-RestMethod -Method Patch `
+  -Uri "https://plantera-broker-production.up.railway.app/api/v1/devices/1/config" `
+  -ContentType "application/json" `
+  -Body '{
+    "device_state":          1,
+    "watering_cooldown":     30,
+    "watering_duration":     20,
+    "watering_moisture_on":  35.0,
+    "watering_moisture_off": 60.0,
+    "fan_humidity_on":       75.0,
+    "fan_humidity_off":      60.0,
+    "light_intensity_on":    30.0,
+    "light_intensity_off":   55.0,
+    "non_working_windows":   ["22:00-06:00"]
+  }'
 ```
 
 **Open interactive API docs**

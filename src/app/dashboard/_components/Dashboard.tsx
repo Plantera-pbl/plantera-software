@@ -93,7 +93,7 @@ const INITIAL_PLANTS: Plant[] = [];
 
 // ─── Broker ───────────────────────────────────────────────────────────────────
 
-const BROKER_URL = process.env.NEXT_PUBLIC_BROKER_URL ?? "";
+const BROKER_URL = (process.env.NEXT_PUBLIC_BROKER_URL ?? "").replace(/\/$/, "");
 
 interface BrokerReading {
   id: number;
@@ -135,19 +135,52 @@ async function fetchHistory(
   }
 }
 
-async function sendDeviceCommand(
+/**
+ * Push the full device config to the broker using the broker's field-name
+ * convention.  The broker stores this in `Device.config` (JSON) and, when
+ * MQTT is enabled, immediately publishes it as a retained message to
+ * `iot/devices/{id}/config` so the firmware receives it on next connect.
+ *
+ * Field mapping (software → broker):
+ *   wateringCooldownMin  → watering_cooldown    (minutes)
+ *   wateringOnPct        → watering_moisture_on  (%)
+ *   wateringOffPct       → watering_moisture_off (%)
+ *   wateringDurationSec  → watering_duration     (seconds)
+ *   fanOnPct             → fan_humidity_on        (%)
+ *   fanOffPct            → fan_humidity_off       (%)
+ *   lightOnPct           → light_intensity_on     (%)
+ *   lightOffPct          → light_intensity_off    (%)
+ *   deviceOn (boolean)   → device_state           (1 = on, 0 = off)
+ *   quietHours [{start,end}] → non_working_windows ["HH:MM-HH:MM"]
+ *   timezoneOffsetMin    → (omitted — browser-only concept)
+ */
+async function sendDeviceConfig(
   deviceId: string,
-  enabled: boolean,
+  config: DeviceConfig,
 ): Promise<void> {
   if (!BROKER_URL || !deviceId) return;
+  const brokerConfig = {
+    device_state: config.deviceOn ? 1 : 0,
+    watering_cooldown: config.wateringCooldownMin,
+    watering_duration: config.wateringDurationSec,
+    watering_moisture_on: config.wateringOnPct,
+    watering_moisture_off: config.wateringOffPct,
+    fan_humidity_on: config.fanOnPct,
+    fan_humidity_off: config.fanOffPct,
+    light_intensity_on: config.lightOnPct,
+    light_intensity_off: config.lightOffPct,
+    non_working_windows: config.quietHours.map(
+      (w) => `${w.start}-${w.end}`,
+    ),
+  };
   try {
-    await fetch(`${BROKER_URL}/api/v1/devices/${deviceId}/command`, {
-      method: "POST",
+    await fetch(`${BROKER_URL}/api/v1/devices/${deviceId}/config`, {
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ command: enabled ? "enable" : "disable" }),
+      body: JSON.stringify(brokerConfig),
     });
   } catch {
-    // Fire-and-forget; broker may not have a command endpoint yet
+    // Fire-and-forget; network errors are silent to avoid disrupting the UI
   }
 }
 
@@ -640,13 +673,13 @@ export function Dashboard() {
   async function handleToggleDevice() {
     if (!hasSelectedDbId) return;
     const newDeviceOn = !activeConfig.deviceOn;
+    const updatedConfig = { ...activeConfig, deviceOn: newDeviceOn };
     await upsertConfig.mutateAsync({
       plantId: selectedDbId,
-      ...activeConfig,
-      deviceOn: newDeviceOn,
+      ...updatedConfig,
     });
     if (selectedTopic) {
-      void sendDeviceCommand(selectedTopic, newDeviceOn);
+      void sendDeviceConfig(selectedTopic, updatedConfig);
     }
   }
 
@@ -1079,6 +1112,9 @@ export function Dashboard() {
           onClose={() => setShowSettings(false)}
           onSave={async (cfg) => {
             await upsertConfig.mutateAsync({ plantId: selectedDbId, ...cfg });
+            if (selectedTopic) {
+              void sendDeviceConfig(selectedTopic, cfg);
+            }
             setShowSettings(false);
           }}
           isSaving={upsertConfig.isPending}
